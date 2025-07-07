@@ -26,7 +26,7 @@ def user_embedding(logs: dict[int, list[int]], user_id: int) -> np.ndarray | Non
     if user_id not in logs:
         return None  # cold user
 
-    streamer_ids: list[int] = logs.loc[logs.user_id == user_id, "streamer_id"].tolist()
+    streamer_ids: list[int] = logs[user_id]
     if not streamer_ids:
         return None
     
@@ -98,8 +98,9 @@ def evaluate(train_path: str, split_path: str, ks=(10, 20, 50)) -> None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument("--train", default="data/splits/train.parquet", help="train split parquet")
     parser.add_argument("--split", default="data/splits/val.parquet",
                     help="val or test split parquet")
     parser.add_argument("--k", nargs="+", type=int, default=[10, 20, 50])
     args = parser.parse_args()
-    evaluate(args.split, tuple(args.k))
+    evaluate(args.train, args.split, tuple(args.k))
