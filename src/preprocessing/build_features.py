@@ -1,18 +1,28 @@
-"""build_features.py
-Build the canonical streamer feature parquet from the raw CSV and a pre‑trained
-Tag2Vec model.
+"""
+build_features.py
 
-The output goes to:
-    features/streamer/<YYYY‑MM‑DD>.parquet
+Builds the canonical streamer feature parquet from the raw streamer CSV.
+This script processes and normalizes the tag information for each streamer,
+then flattens the tags into a single item sentence string suitable for embedding models.
+
+The output is written to:
+    features/streamer/<YYYY-MM-DD>.parquet
 and a symlink `latest.parquet` is updated for downstream jobs.
 
-Example
--------
-python -m preprocessing.build_features \
-        --csv      data/raw/streamers.csv \
-        --tag2vec  embeddings/tag2vec.bin \
-        --outdir   features/streamer
+Features included:
+- pfid: Streamer ID
+- item_sentence: Flattened string of all tag key-value pairs (e.g., "gender 女 personality 活潑、開朗 ...")
+
+Example usage:
+python -m preprocessing.build_features \\
+    --streamers_csv data/raw/streamers.csv \\
+    --outdir features/streamer
+
+Notes:
+- The script ensures all streamer IDs are unique and all tag dictionaries have the same keys.
+- The original tags column is dropped in the output.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -23,67 +33,79 @@ from typing import List
 
 import numpy as np
 import pandas as pd
-import pyroaring as pr  # roaring bitmap for compact multi‑hot
-from gensim.models import KeyedVectors
 
-def _normalize(tags: List[str]) -> List[str]:
-    """Lower‑case & strip each tag; drop empties."""
-    return [t.strip().lower() for t in tags if t and isinstance(t, str)]
+from src.config import USER_ID_COL, STREAMER_ID_COL
 
+gender_map = {
+    '女': '女',
+    '女性': '女',
+    '女生': '女',
+    'woman': '女',
+    'female': '女',
+    '男': '男',
+    '男性': '男',
+    '男生': '男',
+    'man': '男',
+    'male': '男'
+}
 
-def _tags_to_bitmap(tags: List[str], vocab: dict[str, int]) -> bytes:
-    """Convert tag list to a serialized Roaring bitmap via the shared vocab."""
-    idx = [vocab[t] for t in tags if t in vocab]
-    bm = pr.BitMap(idx)
-    return bm.serialize()
+def _normalize_tags(tags: dict) -> dict:
+    tags = tags.copy()
+    if "gender" in tags:
+        raw_gender = tags["gender"].strip().lower()
+        if raw_gender not in gender_map:
+            print(f"Unknow raw gender: {raw_gender}")
+        tags["gender"] = gender_map.get(raw_gender, raw_gender) # fallback to original if not mapped
+    return tags
 
-
-def _pool_tag_vecs(tags: List[str], kv: KeyedVectors) -> np.ndarray:
-    """Mean‑pool tag vectors (ℓ₂‑normalised). Returns zeros if none found."""
-    vecs = [kv[t] for t in tags if t in kv]
-    if not vecs:
-        return np.zeros(kv.vector_size, dtype=np.float32)
-    v = np.mean(vecs, axis=0, dtype=np.float32)
-    v /= np.linalg.norm(v) + 1e-9
-    return v
-
+def _flatten_tags(tags: dict) -> str:
+    """
+    Convert key-value pairs into a flat sequence like: "key value key value ..."
+    """
+    return " ".join(f"{key} {value}" for key, value in tags.items())
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--csv", required=True, help="Raw streamer CSV path")
-    parser.add_argument("--tag2vec", required=True, help="Pre‑trained tag2vec .bin")
+    parser.add_argument("--streamers_csv", required=True, help="Raw streamer CSV path")
     parser.add_argument("--outdir", default="features/streamer", help="Output directory root")
     parser.add_argument("--date", default=dt.date.today().isoformat(), help="Date suffix for parquet filename")
-    args = parser.parse_args()
-
-    outdir = pathlib.Path(args.outdir)
-    outdir.mkdir(parents=True, exist_ok=True)
+    args = parser.parse_args()  
 
     # Load raw CSV
     print("› Loading CSV …")
-    df = pd.read_csv(args.csv, converters={"tags": ast.literal_eval})
+    df = pd.read_csv(args.streamers_csv)
 
-    if "tags" not in df.columns or "pfid" not in df.columns:
-        raise ValueError("CSV must contain at least 'pfid' and 'tags' columns")
+    # only keep `pfid` and `tags`
+    df = df[["pfid", "tags"]]
+    # convert the `tags` column from string to dictionary
+    df["tags"] = df["tags"].apply(ast.literal_eval)
 
-    # Normalize tag lists (cleans and lowercases each tag in the list)
-    df["tags"] = df.tags.apply(_normalize)
+    # verify streamers are unique
+    if df["pfid"].duplicated().any():
+        raise ValueError("Streamer IDs (pfid) must be unique in the CSV")
 
-    # Load Tag2Vec & vocab
-    print("› Loading Tag2Vec …")
-    kv = KeyedVectors.load(args.tag2vec, mmap="r")
-    vocab = kv.key_to_index  # dict[tag -> int]
+    # assert that all tags have the same keys
+    keys = df["tags"].apply(lambda x: set(x.keys()))
+    if not all(keys == keys.iloc[0]):
+        raise ValueError("All tags must have the same keys in the CSV")
 
-    # Feature engineering
-    # - Convert each streamer's tag list into a multi‑hot bitmap representation using Roaring bitmaps.
-    # - Compute a pooled vector for each streamer's tags using the pre‑trained Tag2Vec embeddings.
-    print("› Computing bitmaps and pooled vectors …")
-    df["tags_multihot"] = df.tags.apply(lambda ts: _tags_to_bitmap(ts, vocab))
-    df["tag2vec_pool"] = df.tags.apply(lambda ts: _pool_tag_vecs(ts, kv))
+    print(f"› Number of streamers: {len(df)}")
 
-    # Optional helper columns
-    df["tag_count"] = df.tags.str.len()
-    df["first_tag"] = df.tags.str[0]
+    # Rename `pfid` to `streamer_id` for consistency
+    df.rename(columns={"pfid": STREAMER_ID_COL}, inplace=True)
+
+    # Normalize tags
+    print("› Normalizing tags …")
+    df["tags"] = df["tags"].apply(_normalize_tags)
+
+    # build item sentence
+    print("› Flattening tags into item sentences …")
+    df["item_sentence"] = df["tags"].apply(_flatten_tags)
+    df.drop(columns=["tags"], inplace=True) # remove the `tags` column as it's no longer needed
+
+    # Create output directory
+    outdir = pathlib.Path(args.outdir)
+    outdir.mkdir(parents=True, exist_ok=True)
 
     # Write parquet
     out_path = outdir / f"{args.date}.parquet"

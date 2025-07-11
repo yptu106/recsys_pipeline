@@ -1,130 +1,167 @@
-"""retrieval.py
-Lightweight recall module used by `candidate_service.py` (or any offline script)
-that represents a **user** as the mean‑pooled embedding of every streamer they
-have interacted with, then queries a FAISS cosine index for the top‑*k*
-candidates.
-
-Assumptions
------------
-* Item vectors (`item_vectors.npy`) are ℓ₂‑normalised. If they are not,
-  set `--renorm-items` when building the index.
-* User‑streamer interaction history is available in a Parquet or CSV with
-  columns: `user_id, streamer_id`  (additional columns ignored).
-* The FAISS index and the lookup table are row‑aligned with the NumPy matrix.
-
-The module is pure‑Python and holds no global async state – safe for multi‑threaded FastAPI usage.
 """
+retrieval.py
+
+Lightweight recall module for user-to-streamer retrieval using mean-pooled streamer embeddings
+and a FAISS cosine index.
+
+Assumptions:
+- Streamer embeddings (e.g., streamer_embs.npy) are ℓ₂-normalized.
+- User-streamer interaction history is available in a Parquet or CSV with columns: user_id, streamer_id.
+- The FAISS index and the lookup table are row-aligned with the NumPy matrix.
+
+Usage:
+python -m src.services.retrieval \
+    --user-id 12345 \
+    --emb-dir embeddings/paraphrase-multilingual-MiniLM-L12-v2 \
+    --index index/faiss/item_hnsw.idx \
+    --k 100
+"""
+
 from __future__ import annotations
-
+import argparse
 import pathlib
+import json
 from functools import lru_cache
-from typing import List, Tuple
-
-import argparse, json, random
+from typing import List
 
 import faiss
 import numpy as np
 import pandas as pd
 
-# ---------------------------------------------------------------------------
-# Config – edit these paths if your repo layout differs.
-# ---------------------------------------------------------------------------
-ITEM_VEC_PATH  = pathlib.Path("embeddings/item_vectors.npy")
-LOOKUP_PATH    = pathlib.Path("embeddings/lookup.parquet")
-INDEX_PATH     = pathlib.Path("index/faiss/item_hnsw.idx") # TODO: make configurable
-USER_LOG_PATH  = pathlib.Path("data/processed/interactions/latest.parquet")  # fallback CSV OK
+from src.config import USER_ID_COL, STREAMER_ID_COL
 
-_DEFAULT_K = 100 # Default number of candidates to retrieve
+DEFAULT_K = 100  # Default number of candidates to retrieve
 
-# ---------------------------------------------------------------------------
-# Lazy loaders – vectors and index are memory‑mapped; lookup & logs load once.
-# ---------------------------------------------------------------------------
+def get_emb_paths(emb_dir: str):
+    emb_dir = pathlib.Path(emb_dir)
+    emb_path = emb_dir / "streamer_embeddings.npy"
+    lookup_path = emb_dir / "lookup.parquet"
+    return emb_path, lookup_path
 
 @lru_cache(maxsize=1)
-def _load_item_vectors() -> np.memmap:  # shape [N, dim], float32
-    return np.load(ITEM_VEC_PATH, mmap_mode="r")
+def _load_streamer_embs(emb_path: str) -> np.memmap:
+    """Load and memory-map the item (streamer) embedding matrix from disk.
+    Cached after first load for efficiency.
+    """
+    return np.load(emb_path, mmap_mode="r")
 
 @lru_cache(maxsize=1)
-def _load_lookup() -> pd.DataFrame:
-    df = pd.read_parquet(LOOKUP_PATH)
-    df.reset_index(drop=True, inplace=True)         # row‑index == FAISS id
+def _load_lookup(lookup_path: str) -> pd.DataFrame:
+    """Load the streamer lookup table (row-aligned with embeddings).
+    Cached after first load for efficiency.
+    """
+    df = pd.read_parquet(lookup_path)
+    df.reset_index(drop=True, inplace=True)
     return df
 
 @lru_cache(maxsize=1)
-def _rowid_by_streamer_id() -> dict[int, int]:
-    df = _load_lookup()
-    return {int(streamer_id): i for i, streamer_id in enumerate(df.streamer_id.values)}
-
-@lru_cache(maxsize=1)
-def _load_faiss() -> faiss.Index:
-    return faiss.read_index(str(INDEX_PATH))
-
-@lru_cache(maxsize=1)
-def _load_user_logs() -> pd.DataFrame:
-    if USER_LOG_PATH.suffix == ".parquet":
-        return pd.read_parquet(USER_LOG_PATH, columns=["user_id", "streamer_id"])
-    return pd.read_csv(USER_LOG_PATH, usecols=["user_id", "streamer_id"])
-
-
-def user_embedding(user_id: int) -> np.ndarray | None:
-    """Return ℓ₂‑normalised mean vector of streamers the user has touched.
-
-    If the user has **no history** in logs, returns *None* (caller must decide
-    fallback behaviour).
+def _rowid_by_streamer_id(lookup_path: str) -> dict[int, int]:
+    """Build a mapping from streamer_id to row index in the embedding matrix.
+    Cached after first build for efficiency.
     """
-    logs = _load_user_logs()
-    streamer_ids: list[int] = logs.loc[logs.user_id == user_id, "streamer_id"].tolist()
-    if not streamer_ids:
-        return None
+    df = _load_lookup(lookup_path)
+    return {int(sid): i for i, sid in enumerate(df[STREAMER_ID_COL].values)}
 
-    row_map = _rowid_by_streamer_id() # {streamer_id: row_id in item_matrix}
-    vecs = []
-    item_mat = _load_item_vectors()
-    for streamer_id in streamer_ids:
-        if streamer_id in row_map:
-            vecs.append(item_mat[row_map[streamer_id]])
+@lru_cache(maxsize=1)
+def _load_faiss(index_path: str) -> faiss.Index:
+    """Load the FAISS index from disk.
+    Cached after first load for efficiency.
+    """
+    return faiss.read_index(str(index_path))
+
+@lru_cache(maxsize=1)
+def _load_user_logs(user_log_path: str) -> pd.DataFrame:
+    """Load user interaction logs (user_id, streamer_id) from disk.
+    Cached after first load for efficiency.
+    """
+    if user_log_path.endswith(".parquet"):
+        return pd.read_parquet(user_log_path, columns=[USER_ID_COL, STREAMER_ID_COL])
+    return pd.read_csv(user_log_path, usecols=[USER_ID_COL, STREAMER_ID_COL])
+
+def user_embedding(
+    user_id: int, 
+    emb_path: str, 
+    lookup_path: str,
+    user_log_path: str, 
+    n_fallback: int = 20
+) -> np.ndarray:
+    """
+    Compute the mean-pooled embedding for a user based on their interaction history.
+    if the user has multiple interactions with the same streamer, the streamer's embedding will be included multiple times.
+        => simple frequency weighting.
+    Fallback:
+        - If user has no history or no valid streamer embeddings, sample n_fallback random streamers.
+    """
+    def sample_random_streamer_ids(n: int) -> list:
+        all_ids = _load_lookup(lookup_path)[STREAMER_ID_COL].values
+        return np.random.choice(all_ids, size=n, replace=False).tolist()
+
+    # Load user interaction logs
+    logs = _load_user_logs(user_log_path)
+    streamer_ids: list[int] = logs.loc[logs[USER_ID_COL] == user_id, STREAMER_ID_COL].tolist()
+
+    # if the user has no history, sample a random set of streamer ids
+    if not streamer_ids:
+        print(f"User {user_id} has no interaction history. Sampling random streamers.")
+        streamer_ids = sample_random_streamer_ids(n_fallback)
+    
+    row_map = _rowid_by_streamer_id(lookup_path)  # {streamer_id: row_id in item_matrix}
+    streamer_mat = _load_streamer_embs(emb_path) # shape [N, dim], float32    
+
+    # collect embeddings for the streamers the user has interacted with
+    # only include those that have valid embeddings
+    vecs = [streamer_mat[row_map[sid]] for sid in streamer_ids if sid in row_map]
 
     if not vecs:
-        return None
-
+        print(f"User {user_id} has no valid streamer interactions. Sampling random streamers.")
+        streamer_ids = sample_random_streamer_ids(n_fallback)
+        vecs = [streamer_mat[row_map[sid]] for sid in streamer_ids if sid in row_map]
+    
+    # mean pool the embeddings (TODO: weighted by interaction recency)
     v = np.mean(vecs, axis=0, dtype=np.float32)
-    # Normalise (safety; should already be close to unit) -------------------
     v /= np.linalg.norm(v) + 1e-9
+
     return v.astype("float32")
 
+def retrieve(
+    user_id: int, 
+    emb_path: str, 
+    lookup_path: str, 
+    index_path: str, 
+    user_log_path: str, 
+    k: int = DEFAULT_K
+) -> List[dict[str, object]]:
+    user_vec = user_embedding(user_id, emb_path, lookup_path, user_log_path)
+    lookup = _load_lookup(lookup_path)
 
-def retrieve(user_id: int, k: int = _DEFAULT_K) -> List[dict[str, object]]:
-    """Return k candidate streamers as a list of dicts.
-
-    Each dict contains `streamer_ids`, and the FAISS `score` (cosine sim).
-    If the user has no embedding, we default to the top‑k popular rows (popularity sort not yet implemented),
-    (id 0‥k‑1). Replace this logic with a smarter cold‑start strategy later.
-    """
-    v_user = user_embedding(user_id)
-    lookup = _load_lookup()
-
-    if v_user is None:
-        print(f"User {user_id} has no interaction history; returning cold‑start candidates.")
-        # Cold‑start fallback (popularity sort not yet implemented).
-        cold = lookup.head(k).copy()
-        cold["score"] = np.nan
-        return cold.to_dict("records")
-
-    index = _load_faiss()
-    D, I = index.search(v_user.reshape(1, -1), k)     # (1, k)
-
+    index = _load_faiss(index_path)
+    # D: distances (cosine similarity), I: indices of the nearest neighbors
+    D, I = index.search(user_vec.reshape(1, -1), k)
     out = lookup.iloc[I[0]].copy()
     out["score"] = D[0]
+    out = out.sort_values("score", ascending=False)
+
     return out.to_dict("records")
 
-
 def main() -> None:
-    parser = argparse.ArgumentParser(description="FAISS retrieval quick‑test")
+    parser = argparse.ArgumentParser(description="FAISS retrieval for streamer embeddings")
     parser.add_argument("--user-id", type=int, required=True)
-    parser.add_argument("--k", type=int, default=_DEFAULT_K)
+    parser.add_argument("--emb-dir", required=True, help="Directory containing streamer_embeddings.npy and lookup.parquet")
+    parser.add_argument("--index", required=True, help="Path to FAISS index")
+    parser.add_argument("--user-log", default="data/processed/interactions/latest.parquet", help="User interaction log (parquet or csv)")
+    parser.add_argument("--k", type=int, default=DEFAULT_K)
     args = parser.parse_args()
 
-    recs = retrieve(args.user_id, k=args.k)
+    emb_path, lookup_path = get_emb_paths(args.emb_dir)
+    recs = retrieve(
+        user_id=args.user_id,
+        emb_path=str(emb_path),
+        lookup_path=str(lookup_path),
+        index_path=args.index,
+        user_log_path=args.user_log,
+        k=args.k
+    )
+
     print(json.dumps(recs, ensure_ascii=False, indent=2))
 
 if __name__ == "__main__":

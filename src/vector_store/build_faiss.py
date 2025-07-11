@@ -9,7 +9,7 @@ Supports three index types:
 Example
 -------
 python -m vector_store.build_faiss \
-        --vectors embeddings/item_vectors.npy \
+        --vectors embeddings/streamer_embeddings.npy \
         --out     index/faiss/item_hnsw.idx \
         --index-type hnsw
 """
@@ -55,13 +55,13 @@ def build_index(x: np.ndarray, kind: str = "hnsw") -> faiss.Index:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--vectors", required=True, help="NumPy .npy from build_item_vecs")
+    parser.add_argument("--embeddings", required=True, help="NumPy .npy from `build_streamer_emb.py`")
     parser.add_argument("--out",     required=True, help="Output .idx path")
     parser.add_argument("--index-type", default="hnsw", choices=INDEX_TYPES)
     args = parser.parse_args()
 
-    x = np.load(args.vectors, mmap_mode="r")            # float32 [N, d] already L2‑normed
-    print(f"loaded vectors: {x.shape[0]}×{x.shape[1]}")
+    x = np.load(args.embeddings, mmap_mode="r")            # float32 [N, d] already L2‑normed
+    print(f"loaded embeddings: {x.shape[0]}×{x.shape[1]}")
 
     pathlib.Path(args.out).parent.mkdir(parents=True, exist_ok=True)
 

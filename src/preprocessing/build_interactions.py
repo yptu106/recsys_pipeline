@@ -4,6 +4,8 @@ import datetime as dt
 import pathlib
 import pandas as pd
 
+from src.config import USER_ID_COL, STREAMER_ID_COL
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--csv", required=True, help="Raw interactions CSV path")
@@ -15,12 +17,12 @@ def main() -> None:
     outdir.mkdir(parents=True, exist_ok=True)
 
     df = pd.read_csv(args.csv, dtype={"pfid":"int64", "anchor_id":"int64"}) # pfid: user ID, anchor_id: streamer ID
-    df = df.dropna(subset=["pfid","anchor_id"])
+    df = df.dropna(subset=["pfid", "anchor_id"])
     
     # rename columns for consistency
-    df = df.rename(columns={"pfid": "user_id", "anchor_id": "streamer_id"})
+    df = df.rename(columns={"pfid": USER_ID_COL, "anchor_id": STREAMER_ID_COL})
 
-    df = df.groupby(["user_id","streamer_id"], as_index=False).first()
+    df = df.groupby([USER_ID_COL, STREAMER_ID_COL], as_index=False).first()
 
     # write parquet
     out_path = outdir / f"{args.date}.parquet"

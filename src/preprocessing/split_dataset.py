@@ -1,144 +1,162 @@
-"""
-split_dataset.py
-Utility to split an implicit-feedback interaction table into
-train / val / test sets per user.
-
-Currently supports:
-    • random_loo    – random leave-one-out (1 val, 1 test, rest train)
-    • time_cutoff   – before / after a timestamp threshold  (if ts exists) (not implemented yet)
-
-Negative sampling (uniform) for val / test is built-in.
-
-Typical call from code
-----------------------
-from preprocessing.split_dataset import split_dataset
-train,val,test = split_dataset(df, strategy=\"random_loo\", neg_per_user=100)
-
-CLI
----
-python -m preprocessing.split_dataset \\
-       --interactions data/processed/interactions/latest.parquet \\
-       --out_dir data/splits
-"""
-
-from __future__ import annotations
 import argparse
 import pathlib
 import numpy as np
 import pandas as pd
-from numpy.random import default_rng
 
-RNG = default_rng(seed=42)
+np.random.seed(42)  # Set seed for reproducibility
 
-def _sample_negatives(
-    pos_df: pd.DataFrame,  # one positive row per user
-    all_items: np.ndarray,
-    neg_per_user: int,
-) -> pd.DataFrame:
-    """Return a DF of (user_id, streamer_id, label=0).
+from src.config import USER_ID_COL, STREAMER_ID_COL
+
+def _uniform_random_loo_split(
+    df: pd.DataFrame,
+    neg_per_pos: int = 100,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """Split user-item interactions into train, validation, and test sets using a uniform random leave-one-out strategy"""
     
-    For each user in the positive set, samples a specified number of
-    negative items (streamer_ids) that are not in the user's positive set.
-    """
-    def sample_row(r):
-        seen = {r.streamer_id}
-        cand = np.setdiff1d(all_items, list(seen))
-        negs = RNG.choice(cand, neg_per_user, replace=False)
-        return pd.DataFrame({"user_id": r.user_id,
-                             "streamer_id": negs,
-                             "label": 0})
+    # user_id -> set(unique streamer_ids)
+    user_streamer_df = df.groupby(USER_ID_COL).agg({
+        STREAMER_ID_COL: set
+    }).rename(columns={
+        STREAMER_ID_COL: "unique_streamers"
+    })
 
-    negs = pd.concat([sample_row(r) for r in pos_df.itertuples(index=False)],
-                     ignore_index=True)
-    return negs
+    streamer_set = set(df[STREAMER_ID_COL].unique())
 
+    train_samples, val_samples, test_samples = [], [], []
+    user_streamer_dict = user_streamer_df["unique_streamers"].to_dict()
+
+    for user_id, pos_streamers in user_streamer_dict.items():
+        pos_streamers = list(pos_streamers)
+        n_pos = len(pos_streamers)
+        if n_pos < 2:
+            # Exclude users with only 1 interacted streamer (though they may have multiple interactions with that streamer)
+            continue
+
+        np.random.shuffle(pos_streamers)
+        if n_pos == 2:
+            # 1 train, 1 test
+            train_pos = pos_streamers[0]
+            test_pos = pos_streamers[1]
+            train_samples.append({USER_ID_COL: user_id, STREAMER_ID_COL: train_pos, "label": 1})
+            # Test positive
+            test_samples.append({USER_ID_COL: user_id, STREAMER_ID_COL: test_pos, "label": 1})
+            # Test negatives
+            neg_candidates = list(streamer_set - set(pos_streamers))
+            if len(neg_candidates) < neg_per_pos:
+                raise ValueError(f"Not enough negative candidates for user {user_id}. Required: {neg_per_pos}, Available: {len(neg_candidates)}")
+            negs = np.random.choice(neg_candidates, neg_per_pos, replace=False)
+            test_samples.extend([
+                {USER_ID_COL: user_id, STREAMER_ID_COL: neg, "label": 0} for neg in negs
+            ])
+        else:
+            # >=3: 1 train, 1 val, 1 test, rest train
+            train_pos = pos_streamers[0]
+            val_pos = pos_streamers[1]
+            test_pos = pos_streamers[2]
+            # Remaining positives (if any)
+            for p in [train_pos] + pos_streamers[3:]:
+                train_samples.append({USER_ID_COL: user_id, STREAMER_ID_COL: p, "label": 1})
+            # Validation positive
+            val_samples.append({USER_ID_COL: user_id, STREAMER_ID_COL: val_pos, "label": 1})
+            # Validation negatives
+            neg_candidates_val = list(streamer_set - set(pos_streamers))
+            if len(neg_candidates_val) < neg_per_pos:
+                raise ValueError(f"Not enough negative candidates for user {user_id} (val). Required: {neg_per_pos}, Available: {len(neg_candidates_val)}")
+            negs_val = np.random.choice(neg_candidates_val, neg_per_pos, replace=False)
+            val_samples.extend([
+                {USER_ID_COL: user_id, STREAMER_ID_COL: neg, "label": 0} for neg in negs_val
+            ])
+            # Test positive
+            test_samples.append({USER_ID_COL: user_id, STREAMER_ID_COL: test_pos, "label": 1})
+            # Test negatives
+            neg_candidates_test = list(streamer_set - set(pos_streamers))
+            if len(neg_candidates_test) < neg_per_pos:
+                raise ValueError(f"Not enough negative candidates for user {user_id} (test). Required: {neg_per_pos}, Available: {len(neg_candidates_test)}")
+            negs_test = np.random.choice(neg_candidates_test, neg_per_pos, replace=False)
+            test_samples.extend([
+                {USER_ID_COL: user_id, STREAMER_ID_COL: neg, "label": 0} for neg in negs_test
+            ])
+
+    train_df = pd.DataFrame(train_samples)
+    val_df = pd.DataFrame(val_samples)
+    test_df = pd.DataFrame(test_samples)
+    return train_df, val_df, test_df
 
 def split_dataset(
-    df: pd.DataFrame,
-    strategy: str = "random_loo",
-    neg_per_user: int = 100,
-    cutoff_ts: str | None = None,
+    df: pd.DataFrame, 
+    strategy: str = "uniform_random_loo",
+    neg_per_pos: int = 100,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """
-    Split user-item interactions (+ optional timestamp) into train/val/test.
+    Split user-item interactions into train, validation, and test sets.
 
-    df columns required:
-        user_id : int64
-        streamer_id    : int64
-        # timestamp (optional, pandas datetime64[ns])
-    All rows are assumed to be positive interactions.
-
-    for each user, the validation (`val`) and test (`test`) DataFrames each contain at most one 
-    positive interaction
-
-    `train`: all positive interactions
-    `test`: one positive interaction per user + N negatives
-    `val`: at most one positive interaction per user (if available) + N negatives
+    df columns required: 
+        USER_ID_COL: int64
+        STREAMER_ID_COL: int64
+    All rows are assumed to be positive interactions. 
     """
-    assert {"user_id", "streamer_id"}.issubset(df.columns)
 
-    if strategy == "random_loo":
-        df = df.sample(frac=1, random_state=42)    # shuffle rows
-        # choose 2 rows per user, if possible
-        grp = df.groupby("user_id")
-        test = grp.head(1)
-        val  = grp.nth(1, dropna="any")  # second row, may be NaN
-        train_idx = df.index.difference(test.index).difference(val.index)
-        train = df.loc[train_idx]
-
-    elif strategy == "time_cutoff":
-        raise ValueError(f"time_cutoff strategy not implemented yet")
-        # if cutoff_ts is None:
-        #     raise ValueError("cutoff_ts required for time_cutoff strategy")
-        # train = df[df.timestamp < cutoff_ts]
-        # rest  = df[df.timestamp >= cutoff_ts]        # val+test candidates
-        # # random split half/half
-        # mask  = RNG.random(len(rest)) < 0.5
-        # val   = rest[mask]
-        # test  = rest[~mask]
+    if strategy == "uniform_random_loo":
+        train_df, val_df, test_df = _uniform_random_loo_split(df, neg_per_pos)
+        return train_df, val_df, test_df
     else:
-        raise ValueError(f"Unknown strategy {strategy}")
-
-    # add positive label
-    for split in (train, val, test):
-        split["label"] = 1
-
-    # negative sampling for val/test
-    all_items = df.streamer_id.unique()
-    val = pd.concat([val, _sample_negatives(val, all_items, neg_per_user)])
-    test = pd.concat([test, _sample_negatives(test, all_items, neg_per_user)])
-
-    return train, val, test
+        raise ValueError(f"Unknown strategy: {strategy}")
+    
+def filter_rows_in_subset(df_all: pd.DataFrame, df_subset: pd.DataFrame, keys: list[str]) -> pd.DataFrame:
+    """
+    Return only the rows in df that are also present in subset, based on the given keys.
+    """
+    result = df_all.merge(
+        df_subset[keys],
+        on=keys,
+        how="inner"
+    )
+    return result
 
 def _cli() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--interactions", required=True,
-                    help="interaction parquet with user_id, streamer_id[, timestamp]")
-    parser.add_argument("--out_dir", required=True, help="output directory")
-    parser.add_argument("--strategy", default="random_loo",
-                    choices=["random_loo", "time_cutoff"])
-    parser.add_argument("--neg-per-user", type=int, default=100)
-    parser.add_argument("--cutoff-ts",
-                    help="YYYY-MM-DD for time_cutoff strategy")
+    parser.add_argument("--interactions", required=True, 
+                        help="Path to the interaction parquet file")
+    parser.add_argument(
+        "--streamer-lookup",
+        required=True,
+        help="Path to the streamer embedding lookup parquet file (used to filter interactions to only streamers with embeddings)"
+    )
+    parser.add_argument(
+        "--filter-missing-streamers",
+        default=True, action="store_true",
+        help="If set, filter out interactions with streamers not in the embedding lookup. If not set, keep all interactions."
+    )
+    parser.add_argument("--out_dir", required=True, help="Output directory for splits")
+    parser.add_argument("--strategy", default="uniform_random_loo", choices=["uniform_random_loo"])
+    parser.add_argument("--neg_per_pos", type=int, default=100)
     args = parser.parse_args()
 
-    df = pd.read_parquet(args.interactions, columns=["user_id", "streamer_id"])
-    if args.strategy == "time_cutoff" and "timestamp" not in df.columns:
-        raise SystemExit("timestamp column missing for time_cutoff split")
+    df = pd.read_parquet(args.interactions, columns=[USER_ID_COL, STREAMER_ID_COL])
 
-    train, val, test = split_dataset(
-        df,
+    if args.filter_missing_streamers:
+        streamer_ids_with_embeddings = set(pd.read_parquet(args.streamer_lookup)["streamer_id"].to_list())
+        before = len(df)
+        df = df[df[STREAMER_ID_COL].isin(streamer_ids_with_embeddings)]
+        after = len(df)
+        print(f"Filtered out {before - after} interactions with streamers not in the embedding lookup ({before} → {after})")
+
+    train_df, val_df, test_df = split_dataset(
+        df, 
         strategy=args.strategy,
-        neg_per_user=args.neg_per_user,
-        cutoff_ts=args.cutoff_ts,
+        neg_per_pos=args.neg_per_pos,
     )
 
-    output_path = pathlib.Path(args.out_dir)
-    output_path.mkdir(parents=True, exist_ok=True)
-    train.to_parquet(output_path / "train.parquet", compression="snappy")
-    val  .to_parquet(output_path / "val.parquet",   compression="snappy")
-    test .to_parquet(output_path / "test.parquet",  compression="snappy")
-    print("✓ wrote", output_path)
+    # filter interactions to only those in train_df
+    df_filtered_train = filter_rows_in_subset(df, train_df, [USER_ID_COL, STREAMER_ID_COL])
+
+    out_dir = pathlib.Path(args.out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    train_df.to_parquet(out_dir / "train.parquet", compression="snappy")
+    val_df.to_parquet(out_dir / "val.parquet", compression="snappy")
+    test_df.to_parquet(out_dir / "test.parquet", compression="snappy")
+    df_filtered_train.to_parquet(out_dir / "interactions_train.parquet", compression="snappy")
+    print("✓ wrote splits to", out_dir)
 
 if __name__ == "__main__":
     _cli()
