@@ -64,6 +64,28 @@ def _flatten_tags(tags: dict) -> str:
     """
     return " ".join(f"{key} {value}" for key, value in tags.items())
 
+def _format_streamer_sentence(tags: dict) -> str:
+    """
+    Format the tags dictionary into a single sentence string.
+    """
+    gender = tags.get("gender", "女")  # default to "女" if not specified
+    pronoun = "她" if gender == "女" else "他"
+    possessive = "她的" if gender == "女" else "他的"
+    gender_word = "女" if gender == "女" else "男"
+
+    personality = tags.get("personality", "未知個性")
+    appearance = tags.get("appearance", "外貌特徵不詳")
+    talents = tags.get("talents", "才藝不詳")
+    topics = tags.get("featured_topics", "多種主題")
+    style = tags.get("live_streaming_style", "風格多樣")
+
+    sentence = (
+        f"{pronoun}是一位{gender_word}實況主，個性屬於 {personality}，外貌特徵為 {appearance}。"
+        f"{pronoun}擅長 {talents}，直播內容常涵蓋 {topics} 等主題。"
+        f"{possessive}直播風格為 {style}。"
+    )
+    return sentence
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--streamers_csv", required=True, help="Raw streamer CSV path")
@@ -101,6 +123,11 @@ def main() -> None:
     # build item sentence
     print("› Flattening tags into item sentences …")
     df["item_sentence"] = df["tags"].apply(_flatten_tags)
+
+    # build formatted sentences
+    print("› Formatting item sentences …")
+    df["format_sentence"] = df["tags"].apply(_format_streamer_sentence)
+
     df.drop(columns=["tags"], inplace=True) # remove the `tags` column as it's no longer needed
 
     # Create output directory

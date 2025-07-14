@@ -27,6 +27,7 @@ COL_TO_ENCODE = "item_sentence"
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--features", required=True, help="Path to the streamer features parquet")
+    parser.add_argument("--encode-col", default="item_sentence", choices=["item_sentence", "format_sentence"], help="Which column to encode for streamer embeddings (default: item_sentence)")
     parser.add_argument("--out_emb",  default="embeddings/streamer_embeddings.npy", help="Output .npy file for streamer embeddings")
     parser.add_argument("--out_map",  default="embeddings/lookup.parquet", help="Output .parquet file for streamer id lookup")
     parser.add_argument(
@@ -38,13 +39,13 @@ def main() -> None:
     args = parser.parse_args()
 
     print(f"› Loading features from {args.features}")
-    df = pd.read_parquet(args.features, columns=[STREAMER_ID_COL, COL_TO_ENCODE])
+    df = pd.read_parquet(args.features, columns=[STREAMER_ID_COL, args.encode_col])
 
     print(f"› Loading model: {args.model}")
     model = SentenceTransformer(args.model)
 
-    print("› Encoding item sentences ...")
-    sentences = df[COL_TO_ENCODE].tolist()
+    print(f"› Encoding {args.encode_col} ...")
+    sentences = df[args.encode_col].tolist()
     embeddings = model.encode(sentences, show_progress_bar=True)
     embeddings = np.asarray(embeddings, dtype=np.float32)
     if args.normalize:
