@@ -30,6 +30,8 @@ import pandas as pd
 
 from src.config import USER_ID_COL, STREAMER_ID_COL
 
+np.random.seed(42)  # For reproducibility
+
 DEFAULT_K = 100  # Default number of candidates to retrieve
 
 def get_emb_paths(emb_dir: str):
@@ -83,7 +85,8 @@ def user_embedding(
     emb_path: str, 
     lookup_path: str,
     user_log_path: str, 
-    n_fallback: int = 20
+    n_fallback: int = 20, 
+    max_history: int = 50
 ) -> np.ndarray:
     """
     Compute the mean-pooled embedding for a user based on their interaction history.
@@ -104,6 +107,11 @@ def user_embedding(
     if not streamer_ids:
         print(f"User {user_id} has no interaction history. Sampling random streamers.")
         streamer_ids = sample_random_streamer_ids(n_fallback)
+
+    # limit to max_history interactions
+    if max_history is not None and len(streamer_ids) > max_history:
+        # assuming that the history is ordered by recency, we take the most recent interactions
+        streamer_ids = streamer_ids[-max_history:]
     
     row_map = _rowid_by_streamer_id(lookup_path)  # {streamer_id: row_id in item_matrix}
     streamer_mat = _load_streamer_embs(emb_path) # shape [N, dim], float32    
@@ -150,6 +158,8 @@ def main() -> None:
     parser.add_argument("--index", required=True, help="Path to FAISS index")
     parser.add_argument("--user-log", default="data/processed/interactions/latest.parquet", help="User interaction log (parquet or csv)")
     parser.add_argument("--k", type=int, default=DEFAULT_K)
+    parser.add_argument("--out-dir", default="data/retrieval_results", help="Output directory for retrieval results")
+
     args = parser.parse_args()
 
     emb_path, lookup_path = get_emb_paths(args.emb_dir)
@@ -163,6 +173,13 @@ def main() -> None:
     )
 
     print(json.dumps(recs, ensure_ascii=False, indent=2))
+
+    # Save results to output directory
+    output_dir = pathlib.Path(args.out_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_file = output_dir / f"user_{args.user_id}.json"
+    with open(output_file, "w", encoding="utf-8") as f:
+        json.dump(recs, f, ensure_ascii=False, indent=2)
 
 if __name__ == "__main__":
     main()
