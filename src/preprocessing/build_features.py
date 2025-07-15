@@ -33,6 +33,7 @@ from typing import List
 
 import numpy as np
 import pandas as pd
+from sklearn.preprocessing import StandardScaler
 
 from src.config import USER_ID_COL, STREAMER_ID_COL
 
@@ -86,9 +87,49 @@ def _format_streamer_sentence(tags: dict) -> str:
     )
     return sentence
 
+def _streamer_aggregated_features(interaction_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Compute and normalize aggregated features for each streamer from the interaction logs.
+    Returns a DataFrame indexed by streamer_id with normalized columns:
+    i_watch_tot, i_watch_cnt, i_unique_user, i_live_cnt, i_followers, i_gift_amt, i_watch_avg, i_pop_z
+    """
+    item_df = (
+        interaction_df.groupby("streamer_id").agg(
+            i_watch_tot=("watch_ts", "sum"),
+            i_watch_cnt=("watch_ts", "size"),
+            i_unique_user=("user_id", "nunique"),
+            i_live_cnt  =("live_cnt", "max"),      # already monthly total
+            i_followers =("is_follow", "sum"),
+            i_gift_amt  =("prod_total", "sum"),
+        )
+        .assign(
+            i_watch_avg = lambda d: d.i_watch_tot / d.i_watch_cnt,
+            i_pop_z     = lambda d: ((d.i_watch_cnt - d.i_watch_cnt.mean()) 
+                                    / d.i_watch_cnt.std()),
+        )
+    )
+
+    # define columns to normalize
+    log_norm_cols = [
+        "i_watch_tot", "i_watch_cnt", "i_unique_user",
+        "i_followers", "i_gift_amt", "i_watch_avg"
+    ]
+    direct_norm_cols = ["i_live_cnt"]
+
+    # Log1p transform skewed columns
+    for col in log_norm_cols:
+        item_df[col] = np.log1p(item_df[col])
+
+    scaler = StandardScaler()
+    scaled_cols = log_norm_cols + direct_norm_cols
+    item_df[scaled_cols] = scaler.fit_transform(item_df[scaled_cols])
+
+    return item_df.reset_index()
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--streamers_csv", required=True, help="Raw streamer CSV path")
+    parser.add_argument("--user_interactions", required=True, help="Raw user interactions CSV path")
     parser.add_argument("--outdir", default="features/streamer", help="Output directory root")
     parser.add_argument("--date", default=dt.date.today().isoformat(), help="Date suffix for parquet filename")
     args = parser.parse_args()  
@@ -129,6 +170,17 @@ def main() -> None:
     df["format_sentence"] = df["tags"].apply(_format_streamer_sentence)
 
     df.drop(columns=["tags"], inplace=True) # remove the `tags` column as it's no longer needed
+
+    # Load user interactions to compute aggregated features
+    print("› Loading user interactions …")
+    interactions_df = pd.read_csv(args.user_interactions)
+    interactions_df.rename(columns={"pfid": USER_ID_COL, "anchor_id": STREAMER_ID_COL}, inplace=True)
+    item_df = _streamer_aggregated_features(interactions_df)
+
+    # Merge aggregated features with the main DataFrame
+    print("› Merging aggregated features …")
+    df = df.merge(item_df, on=STREAMER_ID_COL, how="left")
+    df = df.fillna(0)  # fill NaNs with 0 for numerical columns
 
     # Create output directory
     outdir = pathlib.Path(args.outdir)
