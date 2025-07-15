@@ -1,0 +1,12 @@
+
+#!/bin/bash
+set -e
+
+# Usage: ./02_build_interactions.sh [interactions_csv]
+
+interactions_csv="$1"
+filter_condition="$2" # donate or enter
+
+python -m src.preprocessing.build_interactions \
+    --csv $interactions_csv \
+    --filter-conditions $filter_condition
