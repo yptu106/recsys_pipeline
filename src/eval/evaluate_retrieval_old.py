@@ -1,23 +1,8 @@
-"""
-evaluate_retrieval.py
-
-Evaluate retrieval results against a test set.
-
-Usage:
-python -m src.eval.evaluate_retrieval \
-    --test-path data/splits/test.parquet \
-    --retrieval-dir data/retrieval_results \
-    --ks 10 20 50 100 500
-
-"""
-
 from __future__ import annotations
 import argparse, numpy as np, pandas as pd
-import json
-import pathlib
 from tqdm import tqdm
 
-from src.config import USER_ID_COL, STREAMER_ID_COL
+from src.services.retrieval import retrieve, get_emb_paths
 
 def recall_at_k(r, k):
     return (r <= k).mean()
@@ -31,7 +16,10 @@ def mrr_at_k(r, k):
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--test-path", required=True, help="Path to test parquet/csv with user_id, streamer_id, label columns")
-    parser.add_argument("--retrieval-dir", required=True, help="Directory containing per-user top-k JSON results")
+    parser.add_argument("--emb-dir", required=True, help="Path to the directory containing embeddings and lookup table")
+    parser.add_argument("--index", required=True, help="Path to the FAISS index file")
+    parser.add_argument("--user-log", default="data/splits/interactions_train.parquet",
+                        help="Path to the user interaction log (parquet or csv) within training set")
     parser.add_argument("--ks", nargs="+", type=int, default=[10, 20, 50, 100, 500])
     args = parser.parse_args()
 
@@ -41,30 +29,39 @@ def main() -> None:
     else:
         test_df = pd.read_csv(args.test_path)
 
-    retrieval_dir = pathlib.Path(args.retrieval_dir)
+    emb_path, lookup_path = get_emb_paths(args.emb_dir)
+    index_path = args.index
+    user_log_path = args.user_log
     ks = args.ks
 
-    positive_interactions = test_df[test_df["label"] == 1][[USER_ID_COL, STREAMER_ID_COL]]
+    positive_interactions = test_df[test_df["label"] == 1][["user_id", "streamer_id"]]
 
+    # find the ranks of the positive streamer_id for each user's recommendations
     ranks = []
     for user_id, positive_sid in tqdm(positive_interactions.itertuples(index=False)):
-        json_path = retrieval_dir / f"user_{user_id}.json"
-        if not json_path.exists():
-            print(f"Missing retrieval result for user {user_id}. Skipping.")
-            ranks.append(1_000_000)
+        recs = retrieve(
+            user_id=user_id,
+            emb_path=str(emb_path),
+            lookup_path=str(lookup_path),
+            index_path=index_path,
+            user_log_path=user_log_path,
+            k=max(ks)
+        )
+        
+        if not recs:
+            print(f"No recommendations found for user {user_id}. Skipping.")
+            ranks.append(1_000_000)  # Assign a large rank for no recommendations
             continue
 
-        with open(json_path, "r", encoding="utf-8") as f:
-            recs = json.load(f)
-
+        # Find the rank of the positive streamer_id
         rec_sids = [rec["streamer_id"] for rec in recs]
         try:
             rank = rec_sids.index(positive_sid) + 1  # 1-based index
         except ValueError:
-            rank = 1_000_000  # not found
+            rank = 1_000_000  # not found in top-k
 
         ranks.append(rank)
-
+    
     ranks = np.array(ranks, dtype=np.int32)
 
     for k in ks:

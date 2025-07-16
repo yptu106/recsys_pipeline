@@ -1,16 +1,3 @@
-"""
-evaluate_retrieval.py
-
-Evaluate retrieval results against a test set.
-
-Usage:
-python -m src.eval.evaluate_retrieval \
-    --test-path data/splits/test.parquet \
-    --retrieval-dir data/retrieval_results \
-    --ks 10 20 50 100 500
-
-"""
-
 from __future__ import annotations
 import argparse, numpy as np, pandas as pd
 import json
@@ -31,8 +18,8 @@ def mrr_at_k(r, k):
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--test-path", required=True, help="Path to test parquet/csv with user_id, streamer_id, label columns")
-    parser.add_argument("--retrieval-dir", required=True, help="Directory containing per-user top-k JSON results")
-    parser.add_argument("--ks", nargs="+", type=int, default=[10, 20, 50, 100, 500])
+    parser.add_argument("--ranked-dir", required=True, help="Directory containing per-user top-k JSON results")
+    parser.add_argument("--ks", nargs="+", type=int, default=[10, 20, 50, 100])
     args = parser.parse_args()
 
     # Load test set
@@ -41,16 +28,16 @@ def main() -> None:
     else:
         test_df = pd.read_csv(args.test_path)
 
-    retrieval_dir = pathlib.Path(args.retrieval_dir)
+    ranked_dir = pathlib.Path(args.ranked_dir)
     ks = args.ks
 
     positive_interactions = test_df[test_df["label"] == 1][[USER_ID_COL, STREAMER_ID_COL]]
 
     ranks = []
     for user_id, positive_sid in tqdm(positive_interactions.itertuples(index=False)):
-        json_path = retrieval_dir / f"user_{user_id}.json"
+        json_path = ranked_dir / f"user_{user_id}.json"
         if not json_path.exists():
-            print(f"Missing retrieval result for user {user_id}. Skipping.")
+            print(f"Missing ranked result for user {user_id}. Skipping.")
             ranks.append(1_000_000)
             continue
 
@@ -66,7 +53,7 @@ def main() -> None:
         ranks.append(rank)
 
     ranks = np.array(ranks, dtype=np.int32)
-
+    
     for k in ks:
         recall = recall_at_k(ranks, k)
         mrr = mrr_at_k(ranks, k)
