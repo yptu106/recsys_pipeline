@@ -159,6 +159,7 @@ def main() -> None:
     parser.add_argument("--user-log", default="data/processed/interactions/latest.parquet", help="User interaction log (parquet or csv)")
     parser.add_argument("--k", type=int, default=DEFAULT_K)
     parser.add_argument("--out-dir", default="data/retrieval_results", help="Output directory for retrieval results")
+    parser.add_argument("--print-topk", action="store_true", help="Print top-k results to console")
 
     args = parser.parse_args()
 
@@ -172,7 +173,10 @@ def main() -> None:
         k=args.k
     )
 
-    print(json.dumps(recs, ensure_ascii=False, indent=2))
+    if args.print_topk:
+        print(f"🎯 Top-{args.k} streamers for user {args.user_id}:")
+        for rec in recs:
+            print(f"Streamer ID: {rec[STREAMER_ID_COL]}, Score: {rec['score']:.4f}")
 
     # Save results to output directory
     output_dir = pathlib.Path(args.out_dir)
