@@ -129,7 +129,7 @@ def _streamer_aggregated_features(interaction_df: pd.DataFrame) -> pd.DataFrame:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--streamers_csv", required=True, help="Raw streamer CSV path")
-    parser.add_argument("--user_interactions", required=True, help="Raw user interactions CSV path")
+    parser.add_argument("--user_interactions", required=True, help="User interactions parquet path")
     parser.add_argument("--outdir", default="features/streamer", help="Output directory root")
     parser.add_argument("--date", default=dt.date.today().isoformat(), help="Date suffix for parquet filename")
     args = parser.parse_args()  
@@ -173,7 +173,7 @@ def main() -> None:
 
     # Load user interactions to compute aggregated features
     print("› Loading user interactions …")
-    interactions_df = pd.read_csv(args.user_interactions)
+    interactions_df = pd.read_parquet(args.user_interactions)
     interactions_df.rename(columns={"pfid": USER_ID_COL, "anchor_id": STREAMER_ID_COL}, inplace=True)
     item_df = _streamer_aggregated_features(interactions_df)
 

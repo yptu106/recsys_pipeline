@@ -33,11 +33,11 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--csv", required=True, help="Raw interactions CSV path")
     parser.add_argument("--filter-conditions", default=None, choices=["enter", "donate"])
-    parser.add_argument("--outdir", default="data/processed/interactions", help="Output directory root")
+    parser.add_argument("--out-dir", default="data/processed/interactions", help="Output directory root")
     parser.add_argument("--date", default=dt.date.today().isoformat(), help="Date suffix for parquet filename")
     args = parser.parse_args()
 
-    outdir = pathlib.Path(args.outdir)
+    outdir = pathlib.Path(args.out_dir)
     outdir.mkdir(parents=True, exist_ok=True)
 
     df = pd.read_csv(args.csv, dtype={"pfid":"int64", "anchor_id":"int64"}) # pfid: user ID, anchor_id: streamer ID
@@ -65,7 +65,9 @@ def main() -> None:
     # apply the filters
     df = filter_interactions(df, filters=filters)
 
-    df = df.groupby([USER_ID_COL, STREAMER_ID_COL], as_index=False).first()
+    # group by user_id and streamer_id, keeping the first entry for each pair
+    # to have a unique interaction per user-streamer pair
+    # df = df.groupby([USER_ID_COL, STREAMER_ID_COL], as_index=False).first()
 
     # write parquet
     out_path = outdir / f"{args.date}.parquet"

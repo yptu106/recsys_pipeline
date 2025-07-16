@@ -65,6 +65,7 @@ def main() -> None:
 
     # determine which encoder to use
     if args.model.startswith("bge-m3") or "ollama" in args.model:
+        print(f"› Using Ollama model: {args.model}")
         embeddings = encode_with_ollama(df[args.encode_col].tolist(), model_name=args.model)
     else:
         from sentence_transformers import SentenceTransformer

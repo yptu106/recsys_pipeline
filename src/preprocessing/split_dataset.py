@@ -134,6 +134,7 @@ def _cli() -> None:
 
     df = pd.read_parquet(args.interactions, columns=[USER_ID_COL, STREAMER_ID_COL])
 
+    # filter out interactions with streamers not in the embedding lookup
     if args.filter_missing_streamers:
         streamer_ids_with_embeddings = set(pd.read_parquet(args.streamer_lookup)["streamer_id"].to_list())
         before = len(df)
