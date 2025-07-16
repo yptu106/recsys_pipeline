@@ -7,3 +7,7 @@ data/*
 embeddings/*
 index/*
 features/*
+figures/*
+notebooks/*
+results/*
+ranker/models/*
