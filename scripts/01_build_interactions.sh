@@ -9,4 +9,5 @@ filter_condition="$2" # donate or enter
 
 python -m src.preprocessing.build_interactions \
     --csv $interactions_csv \
-    --filter-conditions $filter_condition
+    --filter-conditions $filter_condition \
+    --out-dir data/processed/interactions/$filter_condition

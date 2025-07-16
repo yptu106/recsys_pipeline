@@ -26,12 +26,17 @@ if [ "$include_numerical" = "true" ]; then
   extra_args="--include-numerical-cols"
 fi
 
+out_format_type="$format_type"
+if [ "$include_numerical" = "true" ]; then
+  out_format_type="${format_type}_num"
+fi
+
 echo "Building streamer embeddings using $features_parquet with format type $format_type and model $model_name ..."
 
 python -m src.embeddings.build_streamer_emb \
     --features $features_parquet \
     --encode-col $format_type \
-    --out-emb "embeddings/${model_name}/${format_type}"/streamer_embeddings.npy \
-    --out-map "embeddings/${model_name}/${format_type}"/lookup.parquet \
+    --out-emb "embeddings/${model_name}/${out_format_type}"/streamer_embeddings.npy \
+    --out-map "embeddings/${model_name}/${out_format_type}"/lookup.parquet \
     --model $full_model \
     $extra_args
