@@ -33,4 +33,5 @@ python -m src.embeddings.build_streamer_emb \
     --encode-col $format_type \
     --out-emb "embeddings/${model_name}/${format_type}"/streamer_embeddings.npy \
     --out-map "embeddings/${model_name}/${format_type}"/lookup.parquet \
+    --model $full_model \
     $extra_args
