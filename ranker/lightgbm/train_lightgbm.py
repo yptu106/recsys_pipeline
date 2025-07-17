@@ -8,6 +8,8 @@ from joblib import dump
 
 from src.config import USER_ID_COL, STREAMER_ID_COL
 
+np.random.seed(42)
+
 N_NEGATIVES = 100
 
 FEATURE_COLS = [

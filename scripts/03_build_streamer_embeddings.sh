@@ -36,7 +36,7 @@ echo "Building streamer embeddings using $features_parquet with format type $for
 python -m src.embeddings.build_streamer_emb \
     --features $features_parquet \
     --encode-col $format_type \
-    --out-emb "embeddings/${model_name}/${out_format_type}"/streamer_embeddings.npy \
+    --out-emb "embeddings/${model_name}/${out_format_type}"/embeddings.npy \
     --out-map "embeddings/${model_name}/${out_format_type}"/lookup.parquet \
     --model $full_model \
     $extra_args

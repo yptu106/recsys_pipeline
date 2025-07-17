@@ -36,7 +36,7 @@ DEFAULT_K = 100  # Default number of candidates to retrieve
 
 def get_emb_paths(emb_dir: str):
     emb_dir = pathlib.Path(emb_dir)
-    emb_path = emb_dir / "streamer_embeddings.npy"
+    emb_path = emb_dir / "embeddings.npy"
     lookup_path = emb_dir / "lookup.parquet"
     return emb_path, lookup_path
 
