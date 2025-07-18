@@ -14,7 +14,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--test-path", required=True, help="Parquet/CSV file with test interactions")
     parser.add_argument("--retrieval-dir", required=True, help="Directory with per-user retrieval JSONs")
-    parser.add_argument("--feature-dir", default="features/ranker")
+    parser.add_argument("--feature-dir", default="features/ranker/lightgbm", help="Directory with user/item features (parquet files)")
     parser.add_argument("--model-dir", default="ranker/models")
     parser.add_argument("--topk", type=int, default=DEFAULT_K)
     parser.add_argument("--out-dir", default="results/ranked")
