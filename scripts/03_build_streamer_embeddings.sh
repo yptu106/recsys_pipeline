@@ -2,7 +2,8 @@
 #!/bin/bash
 set -e
 
-# Usage: ./03_build_streamer_embeddings.sh [features_parquet]
+# Usage: ./03_build_streamer_embeddings.sh [features_parquet] [format_type] [include_numerical] [model_name]
+
 features_parquet="${1:-features/streamer/latest.parquet}"
 format_type="$2" # item_sentence or format_sentence
 include_numerical="$3" # true or false
@@ -36,7 +37,7 @@ echo "Building streamer embeddings using $features_parquet with format type $for
 python -m src.embeddings.build_streamer_emb \
     --features $features_parquet \
     --encode-col $format_type \
-    --out-emb "embeddings/${model_name}/${out_format_type}"/embeddings.npy \
-    --out-map "embeddings/${model_name}/${out_format_type}"/lookup.parquet \
+    --out-emb "embeddings/streamer/${model_name}/${out_format_type}"/embeddings.npy \
+    --out-map "embeddings/streamer/${model_name}/${out_format_type}"/lookup.parquet \
     --model $full_model \
     $extra_args

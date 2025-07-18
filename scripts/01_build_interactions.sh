@@ -2,7 +2,7 @@
 #!/bin/bash
 set -e
 
-# Usage: ./02_build_interactions.sh [interactions_csv]
+# Usage: ./01_build_interactions.sh [interactions_csv] [filter_condition]
 
 interactions_csv="$1"
 filter_condition="$2" # donate or enter

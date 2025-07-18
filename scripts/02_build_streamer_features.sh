@@ -2,7 +2,7 @@
 #!/bin/bash
 set -e
 
-# Usage: ./01_build_streamer_features.sh [streamers_csv]
+# Usage: ./02_build_streamer_features.sh [streamers_csv] [interaction_type]
 
 streamers_cvs="$1"
 interaction_type="${2:-donate}" # 'donate' or 'enter'
