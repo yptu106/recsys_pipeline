@@ -10,6 +10,5 @@ features/*
 figures/*
 notebooks/*
 results/*
-ranker/models/*
 src/embeddings/models/*
-ranker/models/*
+ranker/checkpoints/*
