@@ -10,7 +10,27 @@ def recall_at_k(r, k):
     return (r <= k).mean()
 
 def ndcg_at_k(r, k):
-    return np.where(r <= k, 1 / np.log2(r + 1), 0).mean()
+    """
+    Calculate NDCG@K for binary relevance.
+    
+    Args:
+        r: array of ranks (1-based) for each relevant item
+        k: cutoff position
+    
+    Returns:
+        NDCG@K score
+    """
+    # Calculate DCG@K
+    dcg = np.where(r <= k, 1 / np.log2(r + 1), 0).sum()
+    
+    # Calculate IDCG@K (ideal DCG)
+    # For binary relevance, IDCG is the sum of 1/log2(i+1) for i=1 to min(k, num_relevant_items)
+    num_relevant = len(r)
+    ideal_positions = np.arange(1, min(k, num_relevant) + 1)
+    idcg = (1 / np.log2(ideal_positions + 1)).sum()
+    
+    # Return NDCG@K
+    return dcg / idcg if idcg > 0 else 0.0
 
 def mrr_at_k(r, k):
     return np.where(r <= k, 1 / r, 0).mean()
