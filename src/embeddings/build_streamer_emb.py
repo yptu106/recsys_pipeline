@@ -46,13 +46,14 @@ def main() -> None:
     parser.add_argument("--features", required=True, help="Path to the streamer features parquet")
     parser.add_argument("--include-numerical-cols", action="store_true", help="Whether to include numerical columns in the embedding")
     parser.add_argument("--encode-col", default="item_sentence", choices=["item_sentence", "format_sentence"], help="Which column to encode for streamer embeddings (default: item_sentence)")
-    parser.add_argument("--out-emb",  default="embeddings/streamer_embeddings.npy", help="Output .npy file for streamer embeddings")
+    parser.add_argument("--out-emb",  default="embeddings/embeddings.npy", help="Output .npy file for streamer embeddings")
     parser.add_argument("--out-map",  default="embeddings/lookup.parquet", help="Output .parquet file for streamer id lookup")
     parser.add_argument(
         "--model", 
         default="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
         help="Pre-trained sentence embedding model name or path (e.g., 'sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2')"
     )
+    parser.add_argument("--model-path", default=None, help="Path to the custom model directory (if using a fine-tuned model)")
     parser.add_argument("--normalize", default=True, help="Whether to L2-normalize the embeddings (default: True)", type=bool, nargs='?', const=True)
     args = parser.parse_args()
 
@@ -71,7 +72,11 @@ def main() -> None:
         from sentence_transformers import SentenceTransformer
         print(f"› Encoding with SentenceTransformer model: {args.model}")
 
-        model = SentenceTransformer(args.model)
+        if args.model_path:
+            print(f"   Loading custom model from {args.model_path}")
+            model = SentenceTransformer(args.model_path)
+        else:
+            model = SentenceTransformer(args.model)
         embeddings = model.encode(sentences, show_progress_bar=True)
         embeddings = np.asarray(embeddings, dtype=np.float32)
     
