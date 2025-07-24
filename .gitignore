@@ -12,3 +12,4 @@ notebooks/*
 results/*
 src/embeddings/models/*
 ranker/checkpoints/*
+encoder/checkpoints/*

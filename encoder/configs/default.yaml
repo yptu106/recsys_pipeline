@@ -1,0 +1,21 @@
+# path to the streamers' meta data
+item_corpus: "features/streamer/latest.parquet"
+
+# directories
+train_interactions: "data/splits/donate/interactions_train.parquet"
+val_split_path: "data/splits/donate/val.parquet"
+out_dir: "encoder/checkpoints/default"
+
+# text format
+text_col: "item_sentence"
+
+# path to a checkpoint to resume training from, or null to start fresh
+resume_from: null  
+
+# Training hyperparameters
+epochs: 100
+batch_size: 64
+lr: 1.0e-5
+patience: 3
+margin: 0.2
+val_freq: 3
