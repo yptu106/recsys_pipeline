@@ -2,10 +2,14 @@ import torch
 import torch.nn as nn
 
 class MLPRanker(nn.Module):
-    def __init__(self, input_dim):
+    def __init__(self, input_dim, d_model=256):
         super().__init__()
+        self.user_proj = nn.Linear(input_dim, d_model)
+        self.item_proj = nn.Linear(input_dim, d_model)
+
+        # final input: [user_proj, item_proj, user_proj * item_proj] => 3 * d_model
         self.mlp = nn.Sequential(
-            nn.Linear(input_dim, 256),
+            nn.Linear(d_model * 3, 256),
             nn.ReLU(),
             nn.Dropout(0.2), 
             nn.Linear(256, 64),
@@ -14,7 +18,11 @@ class MLPRanker(nn.Module):
         )
 
     def forward(self, user_emb, item_emb):
-        interaction = user_emb * item_emb
-        x = torch.cat([user_emb, item_emb, interaction], dim=-1)  # Concatenate user and item embeddings (shape: 3 * emb_dim)
+        user_emb = self.user_proj(user_emb) # (B, D)
+        item_emb = self.item_proj(item_emb) # (B, D)
+        interaction = user_emb * item_emb   # Element-wise product (B, D)
 
-        return self.mlp(x).squeeze(-1)  # shape: [batch_size]
+        x = torch.cat([user_emb, item_emb, interaction], dim=-1) # (B, 3D)
+        score = self.mlp(x).squeeze(-1)  # (B,)
+
+        return score 
