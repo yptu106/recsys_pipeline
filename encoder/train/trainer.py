@@ -123,6 +123,9 @@ class EncoderTrainer:
 
                 total_loss += loss.item()
 
+                del user_emb_batch, pos_text_batch, neg_text_batch, pos_emb_batch, neg_emb_batch, loss
+                torch.cuda.empty_cache()  # Optional, reduces fragmentation risk
+
             avg_loss = total_loss / len(dataloader)
             val_loss = None
 
@@ -161,7 +164,9 @@ class EncoderTrainer:
                 best_loss = loss_to_track
                 best_epoch = epoch
                 patience_counter = 0
-                torch.save(self.encoder.state_dict(), self.save_path)
+                # torch.save(self.encoder.state_dict(), self.save_path)
+                self.encoder.save(self.save_path)  # assuming the encoder has a save method
+
                 print(f"   New best model saved at epoch {epoch} with loss {best_loss:.4f}")
             elif is_tracking_epoch: # only increment patience if this epoch was tracked
                 patience_counter += 1

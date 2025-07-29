@@ -66,7 +66,7 @@ def main():
     optimizer = torch.optim.Adam(encoder.parameters(), lr=config["lr"])
 
     ensure_dir_exists(config["out_dir"])
-    model_path = f"{config['out_dir']}/{MODEL_NAME}.pth"
+    model_path = f"{config['out_dir']}/{MODEL_NAME}"
     trainer = EncoderTrainer(
         encoder=encoder,
         device=device,
