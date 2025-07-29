@@ -22,51 +22,19 @@ from src.config import USER_ID_COL, STREAMER_ID_COL
 def recall_at_k(r, k):
     return (r <= k).mean()
 
-# def ndcg_at_k(r, k):
-#     """
-#     Calculate NDCG@K for binary relevance.
-    
-#     Args:
-#         r: array of ranks (1-based) for each relevant item
-#         k: cutoff position
-    
-#     Returns:
-#         NDCG@K score
-#     """
-#     # Calculate DCG@K
-#     dcg = np.where(r <= k, 1 / np.log2(r + 1), 0).sum()
-    
-#     # Calculate IDCG@K (ideal DCG)
-#     # For binary relevance, IDCG is the sum of 1/log2(i+1) for i=1 to min(k, num_relevant_items)
-#     num_relevant = len(r)
-#     ideal_positions = np.arange(1, min(k, num_relevant) + 1)
-#     idcg = (1 / np.log2(ideal_positions + 1)).sum()
-    
-#     # Return NDCG@K
-#     return dcg / idcg if idcg > 0 else 0.0
-
-def ndcg_at_k(r, k):
+def ndcg_at_k(ranks: np.ndarray, k: int) -> float:
     """
-    r: array-like of 1-based ranks for relevant items in predicted list
-    k: cutoff for top-K
-
-    Returns:
-        NDCG@k score ∈ [0, 1]
+    - rank <= k: checks, for each user, whether their relevant item's rank is within the top-k.
+    - 1 / np.log2(ranks + 1): computes DCG for each rank.
+    - np.where(condition, value_if_true, value_if_false):
+        - if ranks[i] <= k, use 1 / np.log2(ranks[i] + 1) (DCG for relevant item)
+        - else, use 0 (not in top-k, so DCG is 0)
+    - idcg is 1 in leave-one-out evaluation since we assume each user has exactly one relevant item.
+    - Finally, we take the mean of these values to get the average nDCG across
     """
-    r = np.array(r)
-    r = r[r <= k]  # filter relevant items that fall within top-k
 
-    if len(r) == 0:
-        return 0.0
-
-    # Sort ranks to compute DCG in proper order
-    r_sorted = np.sort(r)
-
-    dcg = np.sum(1 / np.log2(r_sorted + 1))  # since ranks are 1-based
-    idcg = np.sum(1 / np.log2(np.arange(2, len(r_sorted) + 2)))  # ideal: 1, 2, ..., len(r)
-
-    return dcg / idcg
-
+    ndcg_scores = np.where(ranks <= k, 1 / np.log2(ranks + 1), 0)
+    return ndcg_scores.mean() # average nDCG across all users
 
 def mrr_at_k(r, k):
     return np.where(r <= k, 1 / r, 0).mean()
