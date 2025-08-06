@@ -13,3 +13,6 @@ results/*
 src/embeddings/models/*
 ranker/checkpoints/*
 encoder/checkpoints/*
+ranker/recbole/saved/*
+log/*
+log_tensorboard/*

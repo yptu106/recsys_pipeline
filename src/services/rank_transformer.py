@@ -12,7 +12,7 @@ UserEmbFallbackConfig = namedtuple(
     ["emb_path", "lookup_path", "user_log_path", "n_fallback", "max_history"]
 )
 
-from ranker.transformer.transformer_ranker import TransformerRanker
+from ranker.models.transformer_ranker import TransformerRanker
 from src.services.retrieval import user_embedding, get_emb_paths
 from src.config import USER_ID_COL, STREAMER_ID_COL
 
