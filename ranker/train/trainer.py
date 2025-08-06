@@ -126,6 +126,10 @@ class RankerTrainer:
                     else:
                         f.write(f"{epoch},{avg_loss:.6f},,{ 'yes' if is_best else 'no'}\n")
 
+            if epoch == 1:
+                save_path = f"{self.save_path.replace('.pth', f'_epoch{epoch}.pth')}"
+                torch.save(self.model.state_dict(), f"{save_path}")  # save initial model
+
             if is_best:
                 best_loss = loss_to_track
                 best_epoch = epoch

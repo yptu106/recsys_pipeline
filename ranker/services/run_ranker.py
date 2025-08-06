@@ -5,8 +5,8 @@ import pandas as pd
 import torch
 
 from ranker.services.ranker import Ranker, UserEmbFallbackConfig
-# from ranker.models.transformer_ranker import TransformerRanker, MLPRanker, CrossInteractionRanker, ContextualRanker
 from ranker.utils.io import load_embedding_and_lookup, ensure_dir_exists, get_emb_paths, load_split
+from ranker.data.triplet_sampling import build_user_log
 from src.config import USER_ID_COL, STREAMER_ID_COL
 
 QUIET_MODE = False
@@ -21,7 +21,10 @@ def load_config(config_path: str) -> dict:
     with open(config_path, "r") as f:
         return yaml.safe_load(f)
 
-def build_model(model_name, model_path, input_dim, d_model, device):
+def build_model(config, input_dim, device):
+    model_name = config["model"]
+    model_path = config["model_path"]
+    d_model = config.get("d_model", 256)
     if model_name == "mlp":
         from ranker.models.mlp_ranker import MLPRanker
         model =  MLPRanker(input_dim=input_dim).to(device)
@@ -29,7 +32,7 @@ def build_model(model_name, model_path, input_dim, d_model, device):
         return model
     elif model_name == "transformer":
         from ranker.models.transformer_ranker import TransformerRanker
-        model = TransformerRanker(input_dim=input_dim, d_model=d_model).to(device)
+        model = TransformerRanker(input_dim=input_dim, d_model=d_model, n_layers=config.get("n_layers", 2)).to(device)
         model.load_state_dict(torch.load(model_path, map_location=device))
         return model
     elif model_name == "cross_interaction":
@@ -63,6 +66,11 @@ def main():
     else:
         raise ValueError("Either 'test_path' or 'user_ids' must be provided in the config.")
 
+    # for debugging purposes, limit user_ids
+    if config.get("debug_limit"):
+        print(f"Limiting user IDs to {config['debug_limit']} for debugging...")
+        user_ids = user_ids[:config["debug_limit"]]
+
     # Load item embeddings and lookups
     print("Loading item embeddings and lookups...")
     item_embeddings, item_lookup = load_embedding_and_lookup(config["streamer_emb_dir"], STREAMER_ID_COL)
@@ -87,13 +95,18 @@ def main():
         max_history=fallback_config["max_history"]
     )
 
+    # load user history lookup if provided
+    user_history_lookup = None
+    if config.get("user_log_path"):
+        print(f"Loading user history from {config['user_log_path']}...")
+        user_history_lookup = build_user_log(config["user_log_path"], user_id_col=USER_ID_COL, item_id_col=STREAMER_ID_COL)
+        print(f"Loaded user history for {len(user_history_lookup)} users.")
+
     # Initialize ranker
     print("Initializing ranker...")
     model = build_model(
-        model_name=config["model"],
-        model_path=config["model_path"],
+        config=config,
         input_dim=item_embeddings.shape[1],
-        d_model=config["d_model"],
         device=torch.device("cuda" if torch.cuda.is_available() else "cpu")
     )
 
@@ -101,6 +114,7 @@ def main():
         model=model,
         item_embeddings=item_embeddings,
         item_lookup=item_lookup,
+        user_history_lookup=user_history_lookup, 
         user_embeddings=user_embeddings, 
         user_lookup=user_lookup, 
         user_fallback_config=fallback_config
@@ -108,7 +122,12 @@ def main():
 
     # Rank users
     print(f"Ranking {len(user_ids)} users...")
-    results = ranker.rank(user_ids, config["retrieval_dir"], config["topk"])
+    results = ranker.rank(
+        user_ids, 
+        config["retrieval_dir"], 
+        config["topk"], 
+        batch_size=config.get("batch_size", 256),
+    )
 
     # Save results
     ranker.dump_results(results, config["out_dir"])
