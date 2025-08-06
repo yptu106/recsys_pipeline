@@ -67,7 +67,7 @@ def collect_retrieval_results(retrieval_dir):
 
     return retrieval_results
 
-def build_user_log(user_log_path, user_id_col=USER_ID_COL, item_id_col=STREAMER_ID_COL):
+def build_user_log(user_log_path, user_id_col=USER_ID_COL, item_id_col=STREAMER_ID_COL, max_history_len=100):
     """
     Builds a user log dictionary from the user log file.
 
@@ -77,7 +77,7 @@ def build_user_log(user_log_path, user_id_col=USER_ID_COL, item_id_col=STREAMER_
     Returns:
         dict: user_id to set of item_ids mapping.
     """
-    user_log = defaultdict(set)
+    user_log = defaultdict(list)
 
     if user_log_path.endswith(".parquet"):
         df = pd.read_parquet(user_log_path)
@@ -87,7 +87,12 @@ def build_user_log(user_log_path, user_id_col=USER_ID_COL, item_id_col=STREAMER_
     for _, row in df.iterrows():
         user_id = row[user_id_col]
         item_id = row[item_id_col]
-        user_log[user_id].add(item_id)
+        user_log[user_id].append(item_id)
+    
+    # Truncate histories to max_history_len
+    for user_id in user_log:
+        if len(user_log[user_id]) > max_history_len:
+            user_log[user_id] = user_log[user_id][-max_history_len:]
 
     return user_log
 
