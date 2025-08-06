@@ -5,7 +5,53 @@ import pathlib
 import pandas as pd
 from typing import Callable, List
 
-from src.config import USER_ID_COL, STREAMER_ID_COL
+from src.config import USER_ID_COL, STREAMER_ID_COL, TIMESTAMP_COL
+
+# def event_time_to_timestamp(df: pd.DataFrame) -> pd.DataFrame:
+#     """
+#     Convert 'event_time' column to UNIX timestamp in seconds.
+#     If 'event_time' is not present, return the DataFrame unchanged.
+#     """
+#     if "event_time" in df.columns:
+#         print("Converting 'event_time' to UNIX timestamp...")
+#         df["timestamp"] = pd.to_datetime(df["event_time"], errors="coerce").astype("int64") // 10**9
+#         df = df.drop(columns=["event_time"])
+#     return df
+
+def deduplicate_interactions(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Deduplicate interactions by keeping the first entry for each user-streamer pair.
+    This ensures a unique interaction per user-streamer pair.
+    """
+    if "event_time" in df.columns:
+        # map 'event_time' to a datetime column
+        df["event_time"] = pd.to_datetime(
+            df["event_time"],          # works for both ISO strings and numeric epoch
+            errors="coerce",           # bad rows → NaT (you can drop them later)
+            utc=True                   # keep a single time-zone; optional
+        )
+        # round timestamps down to the day
+        df["event_time"] = df["event_time"].dt.floor("D")
+
+        # convert to UNIX timestamp in seconds
+        df[TIMESTAMP_COL] = df["event_time"].astype("int64") // 10**9
+        df = df.drop(columns=["event_time"])
+
+        agg = {
+            "prod_total": "sum",
+            "watch_ts": "sum",
+            "follow": "sum",
+        }
+        
+        grouped = (
+            df.groupby([USER_ID_COL, STREAMER_ID_COL, TIMESTAMP_COL], as_index=False)
+            .agg(**{k: (k, v) for k, v in agg.items()})             # named-agg syntax
+            .sort_values(TIMESTAMP_COL)
+        )
+
+        return grouped
+
+    return df.groupby([USER_ID_COL, STREAMER_ID_COL], as_index=False).first().sort_values(TIMESTAMP_COL)
 
 def filter_interactions(
     df: pd.DataFrame,
@@ -56,14 +102,33 @@ def main() -> None:
             lambda df: df["watch_ts"] != 0.0,      # only keep entries with non-zero watch_ts
         ]
     elif args.filter_conditions == "donate":
-        filters = [
-            lambda df: (df["consume_cnt"] > 0) | (df["prod_total"] > 0),  # keep entries with donations or products
-        ]
+        if "consume_cnt" in df.columns and "prod_total" in df.columns:
+            filters = [
+                lambda df: (df["consume_cnt"] > 0) | (df["prod_total"] > 0),  # keep entries with donations or products
+            ]
+        elif "prod_total" in df.columns:
+            filters = [
+                lambda df: (df["prod_total"] > 0),  # keep entries with products
+            ]
+        elif "consume_cnt" in df.columns:
+            filters = [
+                lambda df: (df["consume_cnt"] > 0),  # keep entries with donations
+            ]
+        else:
+            print("Warning: No donation/product columns found. Skipping donation filters.")
+            filters = []
     else:
         filters = []
 
     # apply the filters
     df = filter_interactions(df, filters=filters)
+
+    # # convert event_time to timestamp
+    # df = event_time_to_timestamp(df)
+
+    # deduplicate interactions
+    df = deduplicate_interactions(df)
+    print(f"Interactions after deduplication: {len(df)} rows")
 
     # group by user_id and streamer_id, keeping the first entry for each pair
     # to have a unique interaction per user-streamer pair
