@@ -56,7 +56,7 @@ def build_model(config, input_dim, device):
         return ContextualRanker(input_dim=input_dim, proj_dim=d_model).to(device)
     elif model_name == "contextual_positional":
         from ranker.models.contextual_positional_ranker import ContextualRanker
-        return ContextualRanker(input_dim=input_dim, proj_dim=d_model, max_history_len=config.get("max_history_len", 100)).to(device)
+        return ContextualRanker(input_dim=input_dim, proj_dim=d_model, max_history_len=config.get("max_history_len", 50)).to(device)
     else:
         raise ValueError(f"Unknown model type: {model_name}")
 

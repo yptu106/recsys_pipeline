@@ -45,6 +45,11 @@ def build_model(config, input_dim, device):
         model = ContextualRanker(input_dim=input_dim, proj_dim=d_model).to(device)
         model.load_state_dict(torch.load(model_path, map_location=device))
         return model
+    elif model_name == "contextual_positional":
+        from ranker.models.contextual_positional_ranker import ContextualRanker
+        model = ContextualRanker(input_dim=input_dim, proj_dim=d_model, max_history_len=config.get("max_history_len", 50)).to(device)
+        model.load_state_dict(torch.load(model_path, map_location=device))
+        return model
     else:
         raise ValueError(f"Unknown model type: {model_name}")
 
@@ -99,7 +104,7 @@ def main():
     user_history_lookup = None
     if config.get("user_log_path"):
         print(f"Loading user history from {config['user_log_path']}...")
-        user_history_lookup = build_user_log(config["user_log_path"], user_id_col=USER_ID_COL, item_id_col=STREAMER_ID_COL)
+        user_history_lookup = build_user_log(config["user_log_path"], user_id_col=USER_ID_COL, item_id_col=STREAMER_ID_COL, max_history_len=config.get("max_history_len", 50))
         print(f"Loaded user history for {len(user_history_lookup)} users.")
 
     # Initialize ranker
