@@ -16,6 +16,57 @@ def get_extra_cols(df: pd.DataFrame) -> list[str]:
     """Return list of columns that are both optional and present."""
     return [c for c in OPTIONAL_COLS if c in df.columns]
 
+def _purge_train_edges(
+    train_df: pd.DataFrame,
+    holdout_df: pd.DataFrame,
+    *, 
+    user_col: str = USER_ID_COL,
+    item_col: str = STREAMER_ID_COL
+) -> pd.DataFrame:
+    """
+    Remove all (user, item) interactions from `train_df` 
+    if that exact pair occurs in `holdout_df`.
+
+    Parameters
+    -----------
+    train_df : pd.DataFrame
+        DataFrame containing training interactions.
+    holdout_df : pd.DataFrame
+        DataFrame containing holdout interactions to purge from training.
+    user_col : str
+        Column name for user IDs.
+    item_col : str
+        Column name for item (streamer) IDs.
+    
+    Returns
+    -----------
+    pruned : pd.DataFrame
+        DataFrame with interactions removed that were also in `holdout_df`.
+    """
+
+    hold_pairs = (
+        holdout_df[holdout_df["label"] == 1][[user_col, item_col]]
+        .drop_duplicates()  # unique (user, item) pairs that must be held out
+        .assign(__flag=1) # a helper column for the merge
+    )
+
+    merged = train_df.merge(
+        hold_pairs,
+        on=[user_col, item_col],
+        how="left",
+        indicator=True  # add a column to indicate match status
+    )
+
+    pruned = merged[merged["_merge"] == "left_only"].drop(columns=["_merge", "__flag"])
+
+    lost_users = set(train_df[user_col]) - set(pruned[user_col])
+    print(
+        f"Purged {len(train_df) - len(pruned)} interactions from train set, "
+        f"and removed {len(lost_users)} users who had no remaining interactions."
+    )
+
+    return pruned.reset_index(drop=True)
+
 def _sample_negatives(
     pos_df: pd.DataFrame,
     neg_per_pos: int,
@@ -418,7 +469,9 @@ def _cli() -> None:
                         help="If set, filter out users with too few streamers in the embedding lookup. If not set, keep all users.")
     parser.add_argument("--split-repeat-novel", default=False, action="store_true",
                         help="If set, split the test set into repeat and novel interactions.")
-    parser.add_argument("--out_dir", required=True, help="Output directory for splits")
+    parser.add_argument("--purge-train-edges", default=False, action="store_true",
+                        help="If set, purge all (user, streamer) pairs from the train set that are present in the validation or test sets.")
+    parser.add_argument("--out-dir", required=True, help="Output directory for splits")
     parser.add_argument("--strategy", default="uniform_random_lko", choices=["uniform_random_lko", "time_based"],)
     parser.add_argument("--neg_per_pos", type=int, default=100)
     parser.add_argument("--val_k", type=int, default=1, help="Number of positive interactions to leave out for validation")
@@ -455,6 +508,11 @@ def _cli() -> None:
         test_k=args.test_k
     )
     print(f"Train size: {len(train_df)}, Val size: {len(val_df)}, Test size: {len(test_df)}")
+
+    if args.purge_train_edges:
+        # purge train edges that are in test
+        train_df = _purge_train_edges(train_df, test_df)
+        print(f"Purged train edges: {len(train_df)} remaining")
 
     # filter interactions to only those in train_df
     df_filtered_train = filter_rows_in_subset(df, train_df, [USER_ID_COL, STREAMER_ID_COL] + extra_cols)
