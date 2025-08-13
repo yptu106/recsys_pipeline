@@ -1,6 +1,7 @@
 import torch
 import json
 import pathlib
+import numpy as np
 import pandas as pd
 from tqdm import tqdm
 from typing import Union, List
@@ -42,20 +43,63 @@ class InteractionBuilder:
         # if self.seq_field:
         #     self.user_history = self._build_histories()
 
+    # def _build_histories(self):
+    #     """
+    #     Returns
+    #     -------
+    #     dict
+    #         {internal_uid_int: torch.LongTensor([iid1, iid2, ...])}
+    #         Sequence is already truncated to the last `max_L` items.
+    #     """
+    #     inter = self.dataset.inter_feat.sort_values(self.cfg["TIME_FIELD"])
+    #     user_history = {}
+    #     for uid, rows in inter.groupby(self.cfg["USER_ID_FIELD"], sort=False):
+    #         seq = rows[self.cfg["ITEM_ID_FIELD"]].tolist()[-self.max_L:]
+    #         user_history[uid] = torch.tensor(seq, dtype=torch.long)
+    #     return user_history
+
     def _build_histories(self):
-        """
-        Returns
-        -------
-        dict
-            {internal_uid_int: torch.LongTensor([iid1, iid2, ...])}
-            Sequence is already truncated to the last `max_L` items.
-        """
-        inter = self.dataset.inter_feat.sort_values(self.cfg["TIME_FIELD"])
+        inter = self.dataset.inter_feat
+        uid_f, iid_f, t_f = self.cfg["USER_ID_FIELD"], self.cfg["ITEM_ID_FIELD"], self.cfg["TIME_FIELD"]
+
+        # branch 1: RecBole Interaction -> pandas (if available)
+        if hasattr(inter, "to_pandas"):
+            df = inter.to_pandas()
+            df = df.sort_values(t_f)
+            return {
+                int(uid): torch.as_tensor(g[iid_f].to_numpy()[-self.max_L:], dtype=torch.long)
+                for uid, g in df.groupby(uid_f, sort=False)
+            }
+
+        # branch 2: Already a pandas DataFrame
+        if isinstance(inter, pd.DataFrame):
+            df = inter.sort_values(t_f)
+            return {
+                int(uid): torch.as_tensor(g[iid_f].to_numpy()[-self.max_L:], dtype=torch.long)
+                for uid, g in df.groupby(uid_f, sort=False)
+            }
+
+        # branch 3: Pure Interaction (no pandas ops)
+        def to_np(x):
+            if isinstance(x, torch.Tensor):
+                return x.detach().cpu().numpy()
+            return np.asarray(x)
+
+        u = to_np(inter[uid_f])
+        i = to_np(inter[iid_f])
+        t = to_np(inter[t_f])
+
+        order = np.argsort(t, kind="stable")
+        u, i = u[order], i[order]
+
         user_history = {}
-        for uid, rows in inter.groupby(self.cfg["USER_ID_FIELD"], sort=False):
-            seq = rows[self.cfg["ITEM_ID_FIELD"]].tolist()[-self.max_L:]
-            user_history[uid] = torch.tensor(seq, dtype=torch.long)
-        return user_history
+        for uid, iid in zip(u, i):
+            lst = user_history.setdefault(int(uid), [])
+            lst.append(int(iid))
+            if len(lst) > self.max_L:
+                lst.pop(0)  # keep only the most recent max_L
+
+        return {uid: torch.tensor(seq, dtype=torch.long) for uid, seq in user_history.items()}
     
     def make_batch(self, uid: int, iid_list: List[int], history: torch.Tensor):
         """

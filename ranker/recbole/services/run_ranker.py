@@ -7,7 +7,10 @@ import pathlib
 import pandas as pd
 from tqdm import tqdm
 from recbole.config import Config
-from recbole.data import create_dataset
+from recbole.data import (
+    create_dataset,
+    data_preparation,
+)
 from recbole.utils import get_model
 from src.config import USER_ID_COL, STREAMER_ID_COL
 from ranker.recbole.services.ranker import RecBoleRanker
@@ -52,9 +55,15 @@ def main():
     recbole_config = Config(model=run_config["model"], config_file_list=[run_config["recbole_config_path"]])
     dataset = create_dataset(recbole_config)
 
-    # load trained BPR model
-    model_cls = get_model(recbole_config['model'])
-    model = model_cls(recbole_config, dataset)
+    if run_config["model"] == "SASRecF":
+        train_data, _, _ = data_preparation(recbole_config, dataset)
+
+        model_cls = get_model(recbole_config["model"])
+        model = model_cls(recbole_config, train_data._dataset).to(recbole_config["device"])
+    else:
+        # load trained BPR model
+        model_cls = get_model(recbole_config['model'])
+        model = model_cls(recbole_config, dataset)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     checkpoint_path = run_config["checkpoint_path"]
