@@ -3,8 +3,7 @@ item_corpus: "features/streamer/latest.parquet"
 
 # directories
 train_interactions: "data/splits/donate/interactions_train.parquet"
-val_split_path: "data/splits/donate/val.parquet"
-out_dir: "encoder/checkpoints/default"
+out_dir: "src/encoder/checkpoints/wo_val"
 
 # text format
 text_col: "item_sentence"
@@ -14,8 +13,8 @@ resume_from: null
 
 # Training hyperparameters
 epochs: 100
-batch_size: 64
+batch_size: 256
 lr: 1.0e-5
-patience: 3
+patience: 5
 margin: 0.2
-val_freq: 3
+val_freq: 1

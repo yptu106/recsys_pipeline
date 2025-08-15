@@ -1,3 +1,14 @@
+"""
+run_trainer.py
+
+Fine-tune encoder using triplet loss with YAML config.
+
+Usage:
+python -m src.encoder.train.run_trainer \
+    --config <path_to_yaml_config>
+
+"""
+
 import yaml
 import argparse
 import numpy as np
@@ -6,9 +17,9 @@ import torch
 from sentence_transformers import SentenceTransformer, models
 
 from src.config import USER_ID_COL, STREAMER_ID_COL
-from encoder.utils.io import ensure_dir_exists
-from encoder.train.trainer import EncoderTrainer
-from encoder.utils.triplet_sampling import sample_triplets, build_triplets_from_val_df
+from src.encoder.utils.io import ensure_dir_exists
+from src.encoder.train.trainer import EncoderTrainer
+from src.encoder.utils.triplet_sampling import sample_triplets, build_triplets_from_val_df
 
 MODEL_NAME = "MiniLM"
 
@@ -41,13 +52,18 @@ def main():
     print(f"Filtered down to {len(triplets)} valid triplets")
 
     # load validation split
-    val_df = pd.read_parquet(config["val_split_path"]) if config["val_split_path"].endswith('.parquet') else pd.read_csv(config["val_split_path"])
-    val_triplets = build_triplets_from_val_df(val_df)
-    print(f"Loaded {len(val_triplets)} validation triplets")
+    if config.get("val_split_path") is None:
+        print("No validation split provided, training without validation")
+        val_triplets = None
+    else:
+        print(f"Loading validation split from {config['val_split_path']}")
+        val_df = pd.read_parquet(config["val_split_path"]) if config["val_split_path"].endswith('.parquet') else pd.read_csv(config["val_split_path"])
+        val_triplets = build_triplets_from_val_df(val_df)
+        print(f"Loaded {len(val_triplets)} validation triplets")
 
     # # ---for development purposes---
-    # triplets = triplets[:1000]  # limit to 1000 triplets for quick testing
-    # val_triplets = val_triplets[:100]  # limit to 100 validation trip
+    # triplets = triplets[:100]  # limit to 100 triplets for quick testing
+    # val_triplets = val_triplets[:10]  # limit to 10 validation triplets
 
     if config["resume_from"]:
         print(f"Resuming training from checkpoint: {config['resume_from']}")

@@ -5,9 +5,9 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 from typing import Optional, Union
 
-from encoder.data.dataset import TripletDatasetWithUserEmbeddings
-from encoder.utils.triplet_sampling import sample_triplets, build_triplets_from_val_df
-from encoder.utils.embedding_ops import build_user_embedding_cache, encode_texts
+from src.encoder.data.dataset import TripletDatasetWithUserEmbeddings
+from src.encoder.utils.triplet_sampling import sample_triplets, build_triplets_from_val_df
+from src.encoder.utils.embedding_ops import build_user_embedding_cache, encode_texts
 
 
 class EncoderTrainer:

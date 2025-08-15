@@ -1,14 +1,17 @@
 """
 build_streamer_embs.py
 
-Generate dense streamer embeddings from the item_sentence column using a pre-trained sentence embedding model.
+Generate embeddings for streamers based on selected column.
 
 Usage:
-python -m embeddings.build_streamer_embs \
-    --features features/streamer/latest.parquet \
-    --model sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2 \
-    --out_vec embeddings/streamer_vectors.npy \
-    --out_map embeddings/lookup.parquet
+python -m src.encoder.build_streamer_emb \
+    --features <path_to_streamer_features> \
+    --encode-col <column_to_encode> \
+    --out-dir <output_directory> \
+    --model <model name> \
+    --model-path <path_to_fine-tuned_checkpoint> \
+    [--include-numerical-cols] \
+    [--normalize True|False]
 """
 
 from __future__ import annotations
@@ -46,8 +49,7 @@ def main() -> None:
     parser.add_argument("--features", required=True, help="Path to the streamer features parquet")
     parser.add_argument("--include-numerical-cols", action="store_true", help="Whether to include numerical columns in the embedding")
     parser.add_argument("--encode-col", default="item_sentence", choices=["item_sentence", "format_sentence"], help="Which column to encode for streamer embeddings (default: item_sentence)")
-    parser.add_argument("--out-emb",  default="embeddings/embeddings.npy", help="Output .npy file for streamer embeddings")
-    parser.add_argument("--out-map",  default="embeddings/lookup.parquet", help="Output .parquet file for streamer id lookup")
+    parser.add_argument("--out-dir", default="embeddings", help="Output directory for embeddings and lookup table")
     parser.add_argument(
         "--model", 
         default="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
@@ -101,16 +103,24 @@ def main() -> None:
         embeddings = np.concatenate([embeddings, numerical_features], axis=1)
         print("   Combined embeddings shape:", embeddings.shape)
 
+    # ensure output directory exists
+    out_dir = pathlib.Path(args.out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    # define output paths
+    out_emb = out_dir / "embeddings.npy"
+    out_map = out_dir / "lookup.parquet"
+
     # Create output directory if needed
-    pathlib.Path(args.out_emb).parent.mkdir(parents=True, exist_ok=True)
-    pathlib.Path(args.out_map).parent.mkdir(parents=True, exist_ok=True)
+    pathlib.Path(out_emb).parent.mkdir(parents=True, exist_ok=True)
+    pathlib.Path(out_map).parent.mkdir(parents=True, exist_ok=True)
 
     # save embeddgings and lookup table
-    np.save(args.out_emb, embeddings)
-    print(f"✓ Wrote streamer embeddings → {args.out_emb}")
+    np.save(out_emb, embeddings)
+    print(f"✓ Wrote streamer embeddings → {out_emb}")
 
-    df[[STREAMER_ID_COL]].reset_index(drop=True).to_parquet(args.out_map)
-    print(f"✓ Wrote streamer ID lookup → {args.out_map}")
+    df[[STREAMER_ID_COL]].reset_index(drop=True).to_parquet(out_map)
+    print(f"✓ Wrote streamer ID lookup → {out_map}")
 
 if __name__ == "__main__":
     main()

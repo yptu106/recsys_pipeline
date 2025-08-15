@@ -1,8 +1,14 @@
 """
 build_user_emb.py
 
-A script to build user embeddings based on their interactions with streamers.
+Construct user embeddings by aggregating streamer embeddings based on user interactions.
 
+Usage:
+python -m src.encoder.build_user_emb \
+    --streamer-emb-dir <path_to_streamer_embeddings> \
+    --user-log <path_to_user_interaction_log> \
+    --out-dir <output_directory> \
+    [--normalize True|False]
 """
 
 from __future__ import annotations
