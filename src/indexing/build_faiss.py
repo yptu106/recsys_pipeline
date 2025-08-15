@@ -10,8 +10,8 @@ Example
 -------
 python -m vector_store.build_faiss \
         --vectors embeddings/streamer_embeddings.npy \
-        --out     index/faiss/item_hnsw.idx \
-        --index-type hnsw
+        --out     index/faiss/index_flat.idx \
+        --index-type flat
 """
 from __future__ import annotations
 
