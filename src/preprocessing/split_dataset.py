@@ -1,3 +1,24 @@
+"""
+split_dataset.py
+
+Splits user-item interactions into train, validation, and test sets using various strategies. 
+Includes options for negative sampling, filtering, and splitting repeat/novel interactions.
+
+Usage:
+
+python -m src.preprocessing.split_dataset \
+    --interactions data/processed/interactions_w_ts/latest.parquet \
+    --out-dir data/splits/donate/w_ts_heavy \
+    --strategy time_based \  # or "uniform_random_lko" for uniform random leave-k-out
+    --neg_per_pos 5 \  # number of negatives per positive interaction in `val` and `test` (Note: train does not have negatives)
+    --val_k 1 \  # number of positives to leave out for validation
+    --test_k 1 \  # number of positives to leave out for testing
+    --filter-missing-streamers \  # filter out interactions with streamers not in the embedding lookup
+    --streamer-lookup embeddings/streamer/MiniLM_40epoch/item_sentence/lookup.parquet \  # path to the streamer embedding lookup
+    --filter-too-few-streamers \  # filter out users with too few streamers in the embedding lookup
+    --split-repeat-novel \  # split the test set into repeat and novel interactions
+"""
+
 import argparse
 import pathlib
 import numpy as np
@@ -132,70 +153,6 @@ def _batch_sample_negatives(
         neg_frames.append(neg_df)
 
     return pd.concat(neg_frames, ignore_index=True)
-
-def _donation_based_split(
-    df: pd.DataFrame,
-    neg_per_pos: int = 100,
-    val_k: int = 1, 
-    test_k: int = 1,
-    top_k: int = 5, 
-    min_streamers_for_eval: int = 3,
-) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    """doesn't aggregate multiple interactions with the same streamer"""
-
-    assert "prod_total" in df.columns or "consume_cnt" in df.columns, \
-        "DataFrame must contain either 'prod_total' or 'consume_cnt' for donation-based splitting."
-    
-    # user_id -> set(unique streamer_ids)
-    # get the unique streamers that each user has interacted with
-    user_streamer_df = df.groupby(USER_ID_COL).agg({
-        STREAMER_ID_COL: set
-    }).rename(columns={
-        STREAMER_ID_COL: "unique_streamers"
-    })
-    user_streamer_dict = user_streamer_df["unique_streamers"].to_dict()
-
-    # create a set of all unique streamer_ids in the dataset
-    streamer_set = set(df[STREAMER_ID_COL].unique())
-
-    # aggregate by user_id and streamer_id, summing the donation amounts
-    agg = df.groupby([USER_ID_COL, STREAMER_ID_COL], as_index=False).agg({
-        DONATE: "sum"
-    })
-
-    # compute per-user rank in place
-    agg["rank"] = agg.groupby(USER_ID_COL)[DONATE].rank(method="first", ascending=False)
-    print(f"Number of users with donate records: {agg[USER_ID_COL].nunique()}")
-
-    qualified = agg[agg["rank"] <= top_k].groupby(USER_ID_COL).filter(lambda x: len(x) >= min_streamers_for_eval)
-    print(f"Number of users with at least {min_streamers_for_eval} streamers in top {top_k}: {qualified[USER_ID].nunique()}")
-
-    # sample one test positive and one val positive per qualified user
-    test_pos = qualified.groupby(USER_ID_COL, group_keys=False).apply(lambda g: g.sample(n=1, random_state=rng))
-    # sample one validation from the remaining streamers
-    remaining = qualified[~qualified.index.isin(test_pos.index)]
-    val_pos = remaining.groupby(USER_ID_COL, group_keys=False).apply(lambda g: g.sample(n=1, random_state=rng))
-
-    test_pos["label"] = 1  # ensure test positives are labeled as 1
-    val_pos["label"] = 1  # ensure val positives are labeled as 1
-
-    test_pos = test_pos[[USER_ID_COL, STREAMER_ID_COL, "label"]]
-    val_pos = val_pos[[USER_ID_COL, STREAMER_ID_COL, "label"]]
-
-    drop_pairs = set(pd.concat([test_pos, val_pos], ignore_index=True).set_index([USER_ID, STREAMER_ID_COL]).index)
-
-    train_df = df[~df.set_index([USER_ID_COL, STREAMER_ID_COL]).index.isin(drop_pairs)].reset_index(drop=True)
-    train_df["label"] = 1  # ensure train positives are labeled as 1
-    train_df = train_df[[USER_ID_COL, STREAMER_ID_COL, "label"]]
-
-    val_df = pd.concat([val_pos, _batch_sample_negatives(
-        val_pos, neg_per_pos, streamer_set, user_streamer_dict
-    )])
-    test_df = pd.concat([test_pos, _batch_sample_negatives(
-        test_pos, neg_per_pos, streamer_set, user_streamer_dict
-    )])
-
-    return train_df, val_df, test_df
 
 
 def _time_based_split(
@@ -404,6 +361,7 @@ def split_dataset(
     else:
         raise ValueError(f"Unknown strategy: {strategy}")
     
+    
 def filter_rows_in_subset(df_all: pd.DataFrame, df_subset: pd.DataFrame, keys: list[str]) -> pd.DataFrame:
     """
     Return only the rows in df that are also present in subset, based on the given keys.
@@ -455,21 +413,21 @@ def _cli() -> None:
     parser.add_argument("--interactions", required=True, 
                         help="Path to the interaction parquet file")
     parser.add_argument(
-        "--streamer-lookup",
-        required=True,
-        help="Path to the streamer embedding lookup parquet file (used to filter interactions to only streamers with embeddings)"
-    )
-    parser.add_argument(
         "--filter-missing-streamers",
-        default=True, action="store_true",
+        action="store_true",
         help="If set, filter out interactions with streamers not in the embedding lookup. If not set, keep all interactions."
     )
+    parser.add_argument(
+        "--streamer-lookup",
+        type=str,
+        help="Path to the streamer embedding lookup parquet file (used to filter interactions to only streamers with embeddings)"
+    )
     parser.add_argument("--filter-too-few-streamers",
-                        default=False, action="store_true",
+                        action="store_true",
                         help="If set, filter out users with too few streamers in the embedding lookup. If not set, keep all users.")
-    parser.add_argument("--split-repeat-novel", default=False, action="store_true",
+    parser.add_argument("--split-repeat-novel", action="store_true",
                         help="If set, split the test set into repeat and novel interactions.")
-    parser.add_argument("--purge-train-edges", default=False, action="store_true",
+    parser.add_argument("--purge-train-edges", action="store_true",
                         help="If set, purge all (user, streamer) pairs from the train set that are present in the validation or test sets.")
     parser.add_argument("--out-dir", required=True, help="Output directory for splits")
     parser.add_argument("--strategy", default="uniform_random_lko", choices=["uniform_random_lko", "time_based"],)
@@ -481,10 +439,13 @@ def _cli() -> None:
     # df = pd.read_parquet(args.interactions, columns=[USER_ID_COL, STREAMER_ID_COL])
     df = pd.read_parquet(args.interactions)
     extra_cols = get_extra_cols(df)
-    df = df[[USER_ID_COL, STREAMER_ID_COL] + extra_cols]
+    # df = df[[USER_ID_COL, STREAMER_ID_COL] + extra_cols]
 
     # filter out interactions with streamers not in the embedding lookup
     if args.filter_missing_streamers:
+        # if no lookup is provided, skip this filter
+        if not args.streamer_lookup:
+            raise ValueError("Must provide --streamer-lookup to filter missing streamers.")
         streamer_ids_with_embeddings = set(pd.read_parquet(args.streamer_lookup)["streamer_id"].to_list())
         before = len(df)
         df = df[df[STREAMER_ID_COL].isin(streamer_ids_with_embeddings)]

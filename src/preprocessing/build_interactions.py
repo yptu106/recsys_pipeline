@@ -1,3 +1,34 @@
+"""
+build_interactions.py
+
+Preprocesses interaction data from a CSV file, applying various filters and deduplication logic.
+
+The output is written to:
+    data/processed/interactions/<YYYY-MM-DD>.parquet
+and a symlink `latest.parquet` is updated for downstream jobs.
+
+This script assumes the input data has columns "pfid" (user ID) and "anchor_id" (streamer ID).
+It renames these columns to `USER_ID_COL` and `STREAMER_ID_COL` for consistency with the rest of the pipeline.
+It also handles optional columns like "event_time", etc., based on the filtering conditions.
+
+Usage:
+
+interactions w/o "event_time":
+```bash
+python -m src.preprocessing.build_interactions \
+    --csv data/raw/interactions.csv \
+    --filter-conditions donate \  # or "enter" for different filters
+    --out-dir data/processed/interactions \
+```
+
+interactions with "event_time":
+```bash
+python -m src.preprocessing.build_interactions \
+    --csv data/raw/interactions_w_ts.csv \
+    --filter-conditions donate \  # or "enter" for different filters
+    --out-dir data/processed/interactions_w_ts \
+```
+"""
 
 import argparse
 import datetime as dt
@@ -7,21 +38,12 @@ from typing import Callable, List
 
 from src.config import USER_ID_COL, STREAMER_ID_COL, TIMESTAMP_COL
 
-# def event_time_to_timestamp(df: pd.DataFrame) -> pd.DataFrame:
-#     """
-#     Convert 'event_time' column to UNIX timestamp in seconds.
-#     If 'event_time' is not present, return the DataFrame unchanged.
-#     """
-#     if "event_time" in df.columns:
-#         print("Converting 'event_time' to UNIX timestamp...")
-#         df["timestamp"] = pd.to_datetime(df["event_time"], errors="coerce").astype("int64") // 10**9
-#         df = df.drop(columns=["event_time"])
-#     return df
-
 def deduplicate_interactions(df: pd.DataFrame) -> pd.DataFrame:
     """
     Deduplicate interactions by keeping the first entry for each user-streamer pair.
-    This ensures a unique interaction per user-streamer pair.
+    If 'event_time' is present, it will group by user, streamer, and timestamp. 
+        - user can decide the granularity of the interactions (e.g., daily).
+    If 'event_time' is not present, it will keep the first entry for each user-streamer pair.
     """
     if "event_time" in df.columns:
         # map 'event_time' to a datetime column
@@ -51,6 +73,7 @@ def deduplicate_interactions(df: pd.DataFrame) -> pd.DataFrame:
 
         return grouped
 
+    # if no 'event_time', just keep the first entry for each user-streamer pair
     return df.groupby([USER_ID_COL, STREAMER_ID_COL], as_index=False).first().sort_values(TIMESTAMP_COL)
 
 def filter_interactions(
@@ -123,16 +146,9 @@ def main() -> None:
     # apply the filters
     df = filter_interactions(df, filters=filters)
 
-    # # convert event_time to timestamp
-    # df = event_time_to_timestamp(df)
-
     # deduplicate interactions
     df = deduplicate_interactions(df)
     print(f"Interactions after deduplication: {len(df)} rows")
-
-    # group by user_id and streamer_id, keeping the first entry for each pair
-    # to have a unique interaction per user-streamer pair
-    # df = df.groupby([USER_ID_COL, STREAMER_ID_COL], as_index=False).first()
 
     # write parquet
     out_path = outdir / f"{args.date}.parquet"

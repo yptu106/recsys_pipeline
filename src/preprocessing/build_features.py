@@ -1,7 +1,7 @@
 """
 build_features.py
 
-Builds the canonical streamer feature parquet from the raw streamer CSV.
+Builds the canonical streamer and user feature parquet from the raw streamer CSV.
 This script processes and normalizes the tag information for each streamer,
 then flattens the tags into a single item sentence string suitable for embedding models.
 
@@ -13,10 +13,12 @@ Features included:
 - pfid: Streamer ID
 - item_sentence: Flattened string of all tag key-value pairs (e.g., "gender 女 personality 活潑、開朗 ...")
 
-Example usage:
-python -m preprocessing.build_features \\
-    --streamers_csv data/raw/streamers.csv \\
-    --outdir features/streamer
+Usage:
+
+python -m preprocessing.build_features \
+    --streamers-csv data/raw/streamers.csv \
+    --user-interactions data/processed/interactions_w_ts/latest.parquet \
+    --out-dir features
 
 Notes:
 - The script ensures all streamer IDs are unique and all tag dictionaries have the same keys.
@@ -94,12 +96,12 @@ def _streamer_aggregated_features(interaction_df: pd.DataFrame) -> pd.DataFrame:
     i_watch_tot, i_watch_cnt, i_unique_user, i_live_cnt, i_followers, i_gift_amt, i_watch_avg, i_pop_z
     """
     item_df = (
-        interaction_df.groupby("streamer_id").agg(
+        interaction_df.groupby(STREAMER_ID_COL).agg(
             i_watch_tot=("watch_ts", "sum"),
             i_watch_cnt=("watch_ts", "size"),
-            i_unique_user=("user_id", "nunique"),
-            i_live_cnt  =("live_cnt", "max"),      # already monthly total
-            i_followers =("is_follow", "sum"),
+            i_unique_user=(USER_ID_COL, "nunique"),
+            # i_live_cnt  =("live_cnt", "max"),      # already monthly total
+            # i_followers =("is_follow", "sum"),
             i_gift_amt  =("prod_total", "sum"),
         )
         .assign(
@@ -111,26 +113,92 @@ def _streamer_aggregated_features(interaction_df: pd.DataFrame) -> pd.DataFrame:
 
     # define columns to normalize
     log_norm_cols = [
-        "i_watch_tot", "i_watch_cnt", "i_unique_user",
-        "i_followers", "i_gift_amt", "i_watch_avg"
+        "i_watch_tot", "i_watch_cnt", "i_unique_user", 
+        "i_gift_amt", "i_watch_avg"
     ]
-    direct_norm_cols = ["i_live_cnt"]
+    # direct_norm_cols = ["i_live_cnt"]
 
     # Log1p transform skewed columns
     for col in log_norm_cols:
         item_df[col] = np.log1p(item_df[col])
 
     scaler = StandardScaler()
-    scaled_cols = log_norm_cols + direct_norm_cols
+    # scaled_cols = log_norm_cols + direct_norm_cols
+    scaled_cols = log_norm_cols
     item_df[scaled_cols] = scaler.fit_transform(item_df[scaled_cols])
 
     return item_df.reset_index()
 
+def _user_aggregated_features(interaction_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Compute and normalize aggregated features for each user from the interaction logs.
+    """
+    user_df = (
+        interaction_df.groupby(USER_ID_COL).agg(
+            u_watch_tot=("watch_ts", "sum"),
+            u_watch_cnt=("watch_ts", "size"),
+            # u_gift_cnt =("consume_cnt", "sum"),
+            u_gift_amt =("prod_total", "sum"),
+            # u_follow_cnt=("is_follow", "sum"),
+        )
+    )
+
+    # define columns to normalize
+    log_norm_cols = [
+        "u_watch_tot", "u_watch_cnt", "u_gift_amt"
+    ]
+    # direct_norm_cols = ["u_follow_cnt"]
+    
+    # Log1p transform skewed columns
+    for col in log_norm_cols:
+        user_df[col] = np.log1p(user_df[col])
+
+    scaler = StandardScaler()
+    # scaled_cols = log_norm_cols + direct_norm_cols
+    scaled_cols = log_norm_cols
+    user_df[scaled_cols] = scaler.fit_transform(user_df[scaled_cols])
+
+    return user_df.reset_index()
+
+def update_latest_symlink(latest_path: pathlib.Path, target_path: pathlib.Path) -> None:
+    """
+    Point `latest_path` at `target_path`. Prefer a relative symlink;
+    fall back to copy if symlinks aren’t supported.
+    """
+    try:
+        if latest_path.exists() or latest_path.is_symlink():
+            latest_path.unlink()
+        # use a relative symlink so moving the folder still works
+        rel_target = target_path.relative_to(latest_path.parent)
+        latest_path.symlink_to(rel_target)
+    except OSError:
+        # Windows or restricted environments → copy
+        shutil.copyfile(target_path, latest_path)
+
+def write_parquet(df: pd.DataFrame, out_dir: pathlib.Path, date: dt) -> None:
+    out_path = out_dir / f"{date}.parquet"
+
+    print(f"› Writing {out_path} …")
+    df.to_parquet(out_path, index=False)
+
+    # Update symlink
+    latest = out_dir / "latest.parquet"
+    try:
+        if latest.is_symlink() or latest.exists():
+            latest.unlink()
+        latest.symlink_to(out_path.name)
+    except OSError:
+        # On Windows symlink may require admin; fallback to copy
+        import shutil
+        shutil.copy(out_path, latest)
+
+    print("✓ Feature parquet built:", out_path)
+
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--streamers_csv", required=True, help="Raw streamer CSV path")
-    parser.add_argument("--user_interactions", required=True, help="User interactions parquet path")
-    parser.add_argument("--outdir", default="features/streamer", help="Output directory root")
+    parser.add_argument("--streamers-csv", required=True, help="Raw streamer CSV path")
+    parser.add_argument("--user-interactions", required=True, help="User interactions parquet path")
+    parser.add_argument("--out-dir", default="features/streamer", help="Output directory root")
     parser.add_argument("--date", default=dt.date.today().isoformat(), help="Date suffix for parquet filename")
     args = parser.parse_args()  
 
@@ -176,6 +244,7 @@ def main() -> None:
     interactions_df = pd.read_parquet(args.user_interactions)
     interactions_df.rename(columns={"pfid": USER_ID_COL, "anchor_id": STREAMER_ID_COL}, inplace=True)
     item_df = _streamer_aggregated_features(interactions_df)
+    user_df = _user_aggregated_features(interactions_df)
 
     # Merge aggregated features with the main DataFrame
     print("› Merging aggregated features …")
@@ -183,27 +252,26 @@ def main() -> None:
     df = df.fillna(0)  # fill NaNs with 0 for numerical columns
 
     # Create output directory
-    outdir = pathlib.Path(args.outdir)
+    outdir = pathlib.Path(args.out_dir)
     outdir.mkdir(parents=True, exist_ok=True)
 
-    # Write parquet
-    out_path = outdir / f"{args.date}.parquet"
-    print(f"› Writing {out_path} …")
-    df.to_parquet(out_path, index=False)
+    streamer_dir = outdir / "streamer"
+    streamer_dir.mkdir(parents=True, exist_ok=True)
 
-    # Update symlink
-    latest = outdir / "latest.parquet"
-    try:
-        if latest.is_symlink() or latest.exists():
-            latest.unlink()
-        latest.symlink_to(out_path.name)
-    except OSError:
-        # On Windows symlink may require admin; fallback to copy
-        import shutil
-        shutil.copy(out_path, latest)
+    write_parquet(
+        df, 
+        out_dir=streamer_dir, 
+        date=args.date,
+    )
 
-    print("✓ Feature parquet built:", out_path)
+    user_dir = outdir / "user"
+    user_dir.mkdir(parents=True, exist_ok=True)
 
+    write_parquet(
+        user_df, 
+        out_dir=user_dir, 
+        date=args.date,
+    )
 
 if __name__ == "__main__":
     main()
