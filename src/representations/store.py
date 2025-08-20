@@ -46,6 +46,14 @@ class EmbeddingStore:
     def all_ids(self) -> List[int]:
         """Return all available item IDs."""
         return list(self.id_to_row.keys())
+
+    def has(self, item_id: int) -> bool:
+        """
+        Check if the store contains the given id.
+        Returns:
+            bool: True if id exists, False otherwise.
+        """
+        return item_id in self.id_to_row
     
     def get_vector(self, item_id: int) -> np.ndarray:
         """Get the embedding vector for a single item ID."""

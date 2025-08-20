@@ -4,9 +4,9 @@ evaluate.py
 Evaluate retrieval/ranked/re-ranked results against a leave-one-out test set.
 
 Usage:
-python -m eval.evaluate \
-    --test-path data/splits/test.parquet \
-    --dir data/results/ \
+python -m src.eval.evaluate \
+    --test-path <directory to the file that contains testing ids and positive labels> \
+    --dir <directory to the per-user top-k JSON results> \
     --ks 10 20 50 100 500
 """
 

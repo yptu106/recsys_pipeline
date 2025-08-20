@@ -18,7 +18,7 @@ class UserEmbedderConfig:
     ts_col: Optional[str] = None       # if provided, sort by timestamp
     max_history_len: int = 50
     pooling: str = "mean"              # "mean" | "recency"
-    fallback_strategy: str = "random"  # "random" | "zero"
+    fallback_strategy: str = "random"  # what to do when building a single (D,) user vector for static models/retrieval
     normalize: bool = True
     rng_seed: int = 42
 
@@ -37,6 +37,7 @@ class UserEmbedder:
         self.user_history_lookup = self._build_user_log(self.cfg.user_log_path)
         self._rng = np.random.default_rng(cfg.rng_seed)
     
+    # TODO: change name to `get_profile_vector`
     def get_user_vector(self, user_id: int) -> np.ndarray:
         """
         Get the pooled embedding vector for a user based on their interaction history.
@@ -117,5 +118,24 @@ class UserEmbedder:
 
     def _sample_random_streamer_ids(self, n: int = 20) -> list:
         """Randomly sample n item IDs for fallback."""
+        # Note: every fallback will receive the same random sample since the RNG is seeded
+        # TODO: use user_id as the seed to get user-specific fallback
         all_ids = self.item_store.all_ids
         return self._rng.choice(all_ids, size=n, replace=False).tolist()
+    
+    def _cold_sequence(self, user_id: int) -> np.ndarray:
+        """
+        Generate a cold start sequence for a user.
+        Returns a 2D array of shape (cold_tile_len, D) where D is the embedding dimension.
+        """
+        if self.cfg.cold_policy == "random":
+            # randomly sample `n_fallback` items as the cold start sequence
+            rng = np.random.default_rng(self.cfg.rng_seed, int(user_id))
+            all_ids = self.item_store.all_ids
+            n = min(self.cfg.n_fallback, len(all_ids))
+            sampled_ids = rng.choice(all_ids, size=n, replace=False)
+            V = self.item_store.get_vectors(sampled_ids).astype("float32", copy=False)
+            H = min(V.shape[0], self.cfg.max_history_len or V.shape[0])
+            return V[-H:]  # return the last H vectors
+        else:
+            raise ValueError(f"Unknown cold start policy: {self.cfg.cold_policy}")

@@ -1,3 +1,15 @@
+"""
+run_trainer.py
+
+This script trains a PyTorch based ranker model.
+It supports both pairwise and pointwise ranking losses, and can be configured via a YAML file.
+The training process includes pretraining on random negatives and fine-tuning on retrieval-based hard negatives.
+
+Usage:
+    python src.ranker.torch.train.run_trainer \
+        --config <path_to_config.yaml>
+"""
+
 import yaml
 import argparse
 import numpy as np
@@ -43,19 +55,19 @@ def build_model(config, input_dim, device):
     model_name = config["model"]
     d_model = config.get("d_model", 256)
     if model_name == "mlp":
-        from ranker.models.mlp_ranker import MLPRanker
+        from src.ranker.torch.models.mlp_ranker import MLPRanker
         return MLPRanker(input_dim=input_dim).to(device)
     elif model_name == "transformer":
-        from ranker.models.transformer_ranker import TransformerRanker
+        from src.ranker.torch.models.transformer_ranker import TransformerRanker
         return TransformerRanker(input_dim=input_dim, d_model=d_model, n_layers=config.get("n_layers", 2)).to(device)
     elif model_name == "cross_interaction":
-        from ranker.models.cross_interaction import CrossInteractionRanker
+        from src.ranker.torch.models.cross_interaction import CrossInteractionRanker
         return CrossInteractionRanker(input_dim=input_dim, d_model=d_model).to(device)
     elif model_name == "contextual":
-        from ranker.models.contextual_ranker import ContextualRanker
+        from src.ranker.torch.models.contextual_ranker import ContextualRanker
         return ContextualRanker(input_dim=input_dim, proj_dim=d_model).to(device)
     elif model_name == "contextual_positional":
-        from ranker.models.contextual_positional_ranker import ContextualRanker
+        from src.ranker.torch.models.contextual_positional_ranker import ContextualRanker
         return ContextualRanker(input_dim=input_dim, proj_dim=d_model, max_history_len=config.get("max_history_len", 50)).to(device)
     else:
         raise ValueError(f"Unknown model type: {model_name}")

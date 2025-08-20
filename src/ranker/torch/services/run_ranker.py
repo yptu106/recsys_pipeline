@@ -1,3 +1,26 @@
+"""
+run_ranker.py
+
+This script runs the PyTorch-based ranker for a recommendation system.
+It loads user IDs, item embeddings, and user embeddings, initializes the ranker,
+and ranks items for each user based on their historical interactions.
+
+Usage:
+    python -m src.ranker.torch.services.run_ranker \
+        --test-path <path_to_test_split_csv> \
+        --retrieval-dir <path_to_retrieval_results> \
+        --user-log-path <path_to_user_log> \
+        --streamer-emb-dir <path_to_streamer_embeddings> \
+        --out-dir <output_directory> \
+        --topk <number_of_top_items> \
+        --model-config <path_to_model_config_yaml> \
+        --ckpt-path <path_to_model_checkpoint> \
+        [--user-ids <list_of_user_ids>] \
+        [--user-emb-dir <path_to_user_embeddings>] \
+        [--debug-limit <number_of_users>] \
+        [--batch-size <batch_size>]
+"""
+
 import yaml
 import argparse
 import numpy as np
@@ -38,27 +61,27 @@ def build_model(config, input_dim, model_path, device):
     model_name = config["model"]
     d_model = config.get("d_model", 256)
     if model_name == "mlp":
-        from ranker.models.mlp_ranker import MLPRanker
+        from src.ranker.torch.models.mlp_ranker import MLPRanker
         model =  MLPRanker(input_dim=input_dim).to(device)
         model.load_state_dict(torch.load(model_path, map_location=device))
         return model
     elif model_name == "transformer":
-        from ranker.models.transformer_ranker import TransformerRanker
+        from src.ranker.torch.models.transformer_ranker import TransformerRanker
         model = TransformerRanker(input_dim=input_dim, d_model=d_model, n_layers=config.get("n_layers", 2)).to(device)
         model.load_state_dict(torch.load(model_path, map_location=device))
         return model
     elif model_name == "cross_interaction":
-        from ranker.models.cross_interaction import CrossInteractionRanker
+        from src.ranker.torch.models.cross_interaction import CrossInteractionRanker
         model = CrossInteractionRanker(input_dim=input_dim, d_model=d_model).to(device)
         model.load_state_dict(torch.load(model_path, map_location=device))
         return model
     elif model_name == "contextual":
-        from ranker.models.contextual_ranker import ContextualRanker
+        from src.ranker.torch.models.contextual_ranker import ContextualRanker
         model = ContextualRanker(input_dim=input_dim, proj_dim=d_model).to(device)
         model.load_state_dict(torch.load(model_path, map_location=device))
         return model
     elif model_name == "contextual_positional":
-        from ranker.models.contextual_positional_ranker import ContextualRanker
+        from src.ranker.torch.models.contextual_positional_ranker import ContextualRanker
         model = ContextualRanker(input_dim=input_dim, proj_dim=d_model, max_history_len=config.get("max_history_len", MAX_HISTORY_LEN)).to(device)
         model.load_state_dict(torch.load(model_path, map_location=device))
         return model
