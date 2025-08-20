@@ -1,0 +1,32 @@
+# Path to the training split parquet or csv file
+train_split: "data/splits/donate/w_ts/train.parquet"
+
+# Path to validation data (optional for now)
+val_split: "data/splits/donate/w_ts/val.parquet"
+
+# Path to test data (optional for now)
+test_split: "data/splits/donate/w_ts/test.parquet"
+
+# Path to the retrieval results file
+retrieval_dir: "results/retrieval/MiniLM_40epoch_ts"
+
+# Embedding directories
+user_emb_dir: "embeddings/user/MiniLM_40epoch_ts"
+streamer_emb_dir: "embeddings/streamer/MiniLM_40epoch/item_sentence" # embeddings for streamers don't change
+
+# model configuration
+model: "transformer"  # Options: "mlp", "transformer"
+n_layers: 3  # Number of transformer layers
+d_model: 1024
+
+# Training hyperparameters
+epochs: 100
+batch_size: 512
+lr: 1.0e-5
+patience: 5
+val_freq: 1
+
+skip_stage_2: True  # Skip stage 2 fine-tuning with retrieval-based hard negatives
+
+# Output directory
+out_dir: "src/ranker/torch/checkpoints/transformer/time_based"
