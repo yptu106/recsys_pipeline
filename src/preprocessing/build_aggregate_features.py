@@ -1,28 +1,22 @@
 """
-build_features.py
+build_aggregate_features.py
 
-Builds the canonical streamer and user feature parquet from the raw streamer CSV.
-This script processes and normalizes the tag information for each streamer,
-then flattens the tags into a single item sentence string suitable for embedding models.
+Build streamer and user aggregated features from interaction logs.
 
 The output is written to:
     features/streamer/<YYYY-MM-DD>.parquet
+    features/user/<YYYY-MM-DD>.parquet
 and a symlink `latest.parquet` is updated for downstream jobs.
-
-Features included:
-- pfid: Streamer ID
-- item_sentence: Flattened string of all tag key-value pairs (e.g., "gender 女 personality 活潑、開朗 ...")
 
 Usage:
 
-python -m preprocessing.build_features \
-    --streamers-csv data/raw/streamers.csv \
-    --user-interactions data/processed/interactions_w_ts/latest.parquet \
+python -m src.preprocessing.build_aggregate_features \
+    --user-interactions <path_to_user_interactions (should come from training set to prevent data leakage)> \
     --out-dir features
 
 Notes:
 - The script ensures all streamer IDs are unique and all tag dictionaries have the same keys.
-- The original tags column is dropped in the output.
+- To prevent data leakage, the aggregated features should be built only on the training set interactions.
 """
 
 from __future__ import annotations
@@ -38,56 +32,6 @@ import pandas as pd
 from sklearn.preprocessing import StandardScaler
 
 from src.config import USER_ID_COL, STREAMER_ID_COL
-
-gender_map = {
-    '女': '女',
-    '女性': '女',
-    '女生': '女',
-    'woman': '女',
-    'female': '女',
-    '男': '男',
-    '男性': '男',
-    '男生': '男',
-    'man': '男',
-    'male': '男'
-}
-
-def _normalize_tags(tags: dict) -> dict:
-    tags = tags.copy()
-    if "gender" in tags:
-        raw_gender = tags["gender"].strip().lower()
-        if raw_gender not in gender_map:
-            print(f"Unknow raw gender: {raw_gender}")
-        tags["gender"] = gender_map.get(raw_gender, raw_gender) # fallback to original if not mapped
-    return tags
-
-def _flatten_tags(tags: dict) -> str:
-    """
-    Convert key-value pairs into a flat sequence like: "key value key value ..."
-    """
-    return " ".join(f"{key} {value}" for key, value in tags.items())
-
-def _format_streamer_sentence(tags: dict) -> str:
-    """
-    Format the tags dictionary into a single sentence string.
-    """
-    gender = tags.get("gender", "女")  # default to "女" if not specified
-    pronoun = "她" if gender == "女" else "他"
-    possessive = "她的" if gender == "女" else "他的"
-    gender_word = "女" if gender == "女" else "男"
-
-    personality = tags.get("personality", "未知個性")
-    appearance = tags.get("appearance", "外貌特徵不詳")
-    talents = tags.get("talents", "才藝不詳")
-    topics = tags.get("featured_topics", "多種主題")
-    style = tags.get("live_streaming_style", "風格多樣")
-
-    sentence = (
-        f"{pronoun}是一位{gender_word}實況主，個性屬於 {personality}，外貌特徵為 {appearance}。"
-        f"{pronoun}擅長 {talents}，直播內容常涵蓋 {topics} 等主題。"
-        f"{possessive}直播風格為 {style}。"
-    )
-    return sentence
 
 def _streamer_aggregated_features(interaction_df: pd.DataFrame) -> pd.DataFrame:
     """
@@ -196,60 +140,18 @@ def write_parquet(df: pd.DataFrame, out_dir: pathlib.Path, date: dt) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--streamers-csv", required=True, help="Raw streamer CSV path")
     parser.add_argument("--user-interactions", required=True, help="User interactions parquet path")
-    parser.add_argument("--out-dir", default="features/streamer", help="Output directory root")
+    parser.add_argument("--out-dir", default="features", help="Output directory root")
     parser.add_argument("--date", default=dt.date.today().isoformat(), help="Date suffix for parquet filename")
     args = parser.parse_args()  
-
-    # Load raw CSV
-    print("› Loading CSV …")
-    df = pd.read_csv(args.streamers_csv)
-
-    # only keep `pfid` and `tags`
-    df = df[["pfid", "tags"]]
-    # convert the `tags` column from string to dictionary
-    df["tags"] = df["tags"].apply(ast.literal_eval)
-
-    # verify streamers are unique
-    if df["pfid"].duplicated().any():
-        raise ValueError("Streamer IDs (pfid) must be unique in the CSV")
-
-    # assert that all tags have the same keys
-    keys = df["tags"].apply(lambda x: set(x.keys()))
-    if not all(keys == keys.iloc[0]):
-        raise ValueError("All tags must have the same keys in the CSV")
-
-    print(f"› Number of streamers: {len(df)}")
-
-    # Rename `pfid` to `streamer_id` for consistency
-    df.rename(columns={"pfid": STREAMER_ID_COL}, inplace=True)
-
-    # Normalize tags
-    print("› Normalizing tags …")
-    df["tags"] = df["tags"].apply(_normalize_tags)
-
-    # build item sentence
-    print("› Flattening tags into item sentences …")
-    df["item_sentence"] = df["tags"].apply(_flatten_tags)
-
-    # build formatted sentences
-    print("› Formatting item sentences …")
-    df["format_sentence"] = df["tags"].apply(_format_streamer_sentence)
-
-    df.drop(columns=["tags"], inplace=True) # remove the `tags` column as it's no longer needed
 
     # Load user interactions to compute aggregated features
     print("› Loading user interactions …")
     interactions_df = pd.read_parquet(args.user_interactions)
     interactions_df.rename(columns={"pfid": USER_ID_COL, "anchor_id": STREAMER_ID_COL}, inplace=True)
+
     item_df = _streamer_aggregated_features(interactions_df)
     user_df = _user_aggregated_features(interactions_df)
-
-    # Merge aggregated features with the main DataFrame
-    print("› Merging aggregated features …")
-    df = df.merge(item_df, on=STREAMER_ID_COL, how="left")
-    df = df.fillna(0)  # fill NaNs with 0 for numerical columns
 
     # Create output directory
     outdir = pathlib.Path(args.out_dir)
@@ -259,7 +161,7 @@ def main() -> None:
     streamer_dir.mkdir(parents=True, exist_ok=True)
 
     write_parquet(
-        df, 
+        item_df, 
         out_dir=streamer_dir, 
         date=args.date,
     )
