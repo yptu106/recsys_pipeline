@@ -201,7 +201,7 @@ $(RANK_STAMP): $(RETRIEVE_STAMP) | $(RANK_DIR)/
 	  --model $(RANKER) \
 	  --recbole-config-path $(RECBOLE_CFG) \
 	  --checkpoint-path $(RECBOLE_CKPT) \
-	  --topk 50
+	  --topk 100
 
 	@touch $(RANK_STAMP)
 
