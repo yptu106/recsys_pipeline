@@ -10,7 +10,6 @@ python -m src.encoder.build_streamer_emb \
     --out-dir <output_directory> \
     --model <model name> \
     --model-path <path_to_fine-tuned_checkpoint> \
-    [--include-numerical-cols] \
     [--normalize True|False]
 """
 
@@ -56,7 +55,7 @@ def main() -> None:
         help="Pre-trained sentence embedding model name or path (e.g., 'sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2')"
     )
     parser.add_argument("--model-path", default=None, help="Path to the custom model directory (if using a fine-tuned model)")
-    parser.add_argument("--normalize", default=True, help="Whether to L2-normalize the embeddings (default: True)", type=bool, nargs='?', const=True)
+    parser.add_argument("--normalize", action="store_true", help="Whether to L2-normalize the embeddings (default: True)")
     args = parser.parse_args()
 
     print(f"› Loading features from {args.features}")
@@ -90,18 +89,19 @@ def main() -> None:
 
     # concatentate with numerical columns if requested
     if args.include_numerical_cols:
-        print("› Including numerical columns in embeddings ...")
-        numerical_cols = [
-            "i_watch_tot", "i_watch_cnt", "i_unique_user", 
-            "i_live_cnt", "i_followers", "i_gift_amt", 
-            "i_watch_avg", "i_pop_z"
-        ]
-        numerical_features = df[numerical_cols].to_numpy().astype(np.float32)
-        print("   Numerical features shape:", numerical_features.shape)
+        print("Deprecated: --include-numerical-cols is deprecated and will be removed in future versions.")
+        # print("› Including numerical columns in embeddings ...")
+        # numerical_cols = [
+        #     "i_watch_tot", "i_watch_cnt", "i_unique_user", 
+        #     "i_live_cnt", "i_followers", "i_gift_amt", 
+        #     "i_watch_avg", "i_pop_z"
+        # ]
+        # numerical_features = df[numerical_cols].to_numpy().astype(np.float32)
+        # print("   Numerical features shape:", numerical_features.shape)
 
-        # concatenate embeddings with numerical features if requested
-        embeddings = np.concatenate([embeddings, numerical_features], axis=1)
-        print("   Combined embeddings shape:", embeddings.shape)
+        # # concatenate embeddings with numerical features if requested
+        # embeddings = np.concatenate([embeddings, numerical_features], axis=1)
+        # print("   Combined embeddings shape:", embeddings.shape)
 
     # ensure output directory exists
     out_dir = pathlib.Path(args.out_dir)

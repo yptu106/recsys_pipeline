@@ -430,7 +430,7 @@ def _cli() -> None:
     parser.add_argument("--purge-train-edges", action="store_true",
                         help="If set, purge all (user, streamer) pairs from the train set that are present in the validation or test sets.")
     parser.add_argument("--out-dir", required=True, help="Output directory for splits")
-    parser.add_argument("--strategy", default="uniform_random_lko", choices=["uniform_random_lko", "time_based"],)
+    parser.add_argument("--strategy", default="time_based", choices=["uniform_random_lko", "time_based"],)
     parser.add_argument("--neg_per_pos", type=int, default=100)
     parser.add_argument("--val_k", type=int, default=1, help="Number of positive interactions to leave out for validation")
     parser.add_argument("--test_k", type=int, default=1, help="Number of positive interactions to leave out for testing")

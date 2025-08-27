@@ -27,7 +27,7 @@ def main() -> None:
     parser.add_argument("--streamer-emb-dir", required=True, help="Directory containing streamer embeddings and lookup")
     parser.add_argument("--user-log", required=True, help="Path to user interaction log (parquet or csv)")
     parser.add_argument("--out-dir", default="embeddings/users", help="Output directory for user embeddings")
-    parser.add_argument("--normalize", default=True, help="Whether to L2-normalize the embeddings (default: True)", type=bool, nargs='?', const=True)
+    parser.add_argument("--normalize", action="store_true", help="Whether to L2-normalize the embeddings (default: True)")
     args = parser.parse_args()
 
     print(f"> Loading user interaction log from {args.user_log}")   

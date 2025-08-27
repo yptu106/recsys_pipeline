@@ -74,7 +74,7 @@ def deduplicate_interactions(df: pd.DataFrame) -> pd.DataFrame:
         return grouped
 
     # if no 'event_time', just keep the first entry for each user-streamer pair
-    return df.groupby([USER_ID_COL, STREAMER_ID_COL], as_index=False).first().sort_values(TIMESTAMP_COL)
+    return df.groupby([USER_ID_COL, STREAMER_ID_COL], as_index=False).first()
 
 def filter_interactions(
     df: pd.DataFrame,
