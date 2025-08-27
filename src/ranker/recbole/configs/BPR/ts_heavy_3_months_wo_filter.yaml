@@ -1,0 +1,45 @@
+gpu_id: '1' 
+
+# Required dataset name (should match subdirectory under `data/`)
+dataset: livestream_w_ts_heavy_wo_filter_missing
+data_path: data/atomic/
+
+# Path to save the trained model checkpoint
+checkpoint_dir: src/ranker/recbole/checkpoints/BPR/ts_heavy_wo_filter_missing
+log_root: src/ranker/recbole/log
+tensorboard_dir: src/ranker/recbole/log_tensorboard
+
+# Field mapping
+USER_ID_FIELD: user_id
+ITEM_ID_FIELD: streamer_id
+
+# Specify which atomic files to load and which columns to include
+load_col:
+  inter: [user_id, streamer_id]
+normalize_all: True
+
+# Model config
+model: BPR  # or MLP, NeuMF, etc.
+embedding_size: 64
+
+# Training settings
+epochs: 200
+train_batch_size: 4096
+eval_batch_size: 4096
+train_neg_sample_args:
+    distribution: uniform
+    sample_num: 1
+    alpha: 1.0
+    dynamic: False
+    candidate_num: 0
+
+# Evaluation settings
+eval_args:
+  group_by: user
+  order: RO
+  split: {'RS': [0.8, 0.1, 0.1]}
+  mode: full
+metrics: ['Recall', 'MRR', 'NDCG']
+topk: 10
+valid_metric: MRR@10
+metric_decimal_place: 4
