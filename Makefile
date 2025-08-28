@@ -73,6 +73,9 @@ RET_DIR        := $(RES_BASE)/retrieved
 RANK_DIR       := $(RES_BASE)/ranked/$(RANKER)
 RERANK_DIR     := $(RES_BASE)/reranked/$(RANKER)/$(RERANK)
 
+ENCODER_CKPT_DIR := src/encoder/checkpoints
+RECBOLE_CKPT_DIR := src/ranker/recbole/checkpoints
+
 # TODO: fix directory naming logic
 ATOMIC_DIR     := data/atomic/$(DATASET)_w_ts_heavy
 
@@ -101,6 +104,7 @@ NEEDED_DIRS := \
 	$(RAW_DIR) \
 	$(PROC_DIR) \
 	$(ATOMIC_DIR) \
+	$(ENCODER_CKPT_DIR) $(RECBOLE_CKPT_DIR) \
 	$(FEAT_DIR)/item_sentence $(FEAT_DIR)/streamer $(FEAT_DIR)/user \
 	$(EMB_DIR)/streamer $(EMB_DIR)/user \
 	$(IDX_DIR) $(SPLIT_DIR) $(RET_DIR) $(RANK_DIR) $(RERANK_DIR)
