@@ -118,6 +118,7 @@ all: rerank
 %/:
 	@mkdir -p $@
 
+# 0) ensure needed dirs exist
 dirs:
 	@mkdir -p $(NEEDED_DIRS)
 
