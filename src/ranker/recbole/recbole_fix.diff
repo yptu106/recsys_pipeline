@@ -1,0 +1,220 @@
+diff --git a/recbole/config/configurator.py b/recbole/config/configurator.py
+index 9d312d5c..94dffd34 100644
+--- a/recbole/config/configurator.py
++++ b/recbole/config/configurator.py
+@@ -80,15 +80,23 @@ class Config(object):
+         self.compatibility_settings()
+         self._init_parameters_category()
+         self.yaml_loader = self._build_yaml_loader()
++
++        # load parameters from three different sources of configurations
+         self.file_config_dict = self._load_config_files(config_file_list)
+         self.variable_config_dict = self._load_variable_config_dict(config_dict)
+         self.cmd_config_dict = self._load_cmd_line()
+-        self._merge_external_config_dict()
++        self._merge_external_config_dict() # merge the three external input configs sources
+ 
++        # get the model object, model class, and dataset name
+         self.model, self.model_class, self.dataset = self._get_model_and_dataset(
+             model, dataset
+         )
++
++        # load the internal config dict based on the model and dataset
++        # load basic configs needed by all models
+         self._load_internal_config_dict(self.model, self.model_class, self.dataset)
++
++        # internal configs will be overwritten by external configs if corresponding keys exist
+         self.final_config_dict = self._get_final_config_dict()
+         self._set_default_parameters()
+         self._init_device()
+@@ -96,6 +104,8 @@ class Config(object):
+         self._set_eval_neg_sample_args("valid")
+         self._set_eval_neg_sample_args("test")
+ 
++        print(f"[Config] data_path: {self.final_config_dict['data_path']}")
++
+     def _init_parameters_category(self):
+         self.parameters = dict()
+         self.parameters["General"] = general_arguments
+@@ -237,7 +247,12 @@ class Config(object):
+ 
+     def _load_internal_config_dict(self, model, model_class, dataset):
+         current_path = os.path.dirname(os.path.realpath(__file__))
++        # load the default config files
++            # these files are used to initialize the internal_config_dict
++            # and will be updated by the config files in the dataset and model folders
+         overall_init_file = os.path.join(current_path, "../properties/overall.yaml")
++
++        # load the config files for model and dataset
+         model_init_file = os.path.join(
+             current_path, "../properties/model/" + model + ".yaml"
+         )
+@@ -321,7 +336,7 @@ class Config(object):
+     def _get_final_config_dict(self):
+         final_config_dict = dict()
+         final_config_dict.update(self.internal_config_dict)
+-        final_config_dict.update(self.external_config_dict)
++        final_config_dict.update(self.external_config_dict) # overwrite internal configs with external configs if corresponding keys exist
+         return final_config_dict
+ 
+     def _set_default_parameters(self):
+diff --git a/recbole/data/utils.py b/recbole/data/utils.py
+index 9a81431b..532356b4 100644
+--- a/recbole/data/utils.py
++++ b/recbole/data/utils.py
+@@ -37,6 +37,9 @@ def create_dataset(config):
+     Returns:
+         Dataset: Constructed dataset.
+     """
++    # inside `recbole.data.dataset`, look for a class whose name matches `<ModelName>Dataset`
++    # if found, use it as the dataset class
++    # e.g., model = "SASRec", dataset class = "SASRecDataset"
+     dataset_module = importlib.import_module("recbole.data.dataset")
+     if hasattr(dataset_module, config["model"] + "Dataset"):
+         dataset_class = getattr(dataset_module, config["model"] + "Dataset")
+@@ -51,7 +54,7 @@ def create_dataset(config):
+             ModelType.DECISIONTREE: "Dataset",
+         }
+         dataset_class = getattr(dataset_module, type2class[model_type])
+-
++        
+     default_file = os.path.join(
+         config["checkpoint_dir"], f'{config["dataset"]}-{dataset_class.__name__}.pth'
+     )
+diff --git a/recbole/model/sequential_recommender/sasrecf.py b/recbole/model/sequential_recommender/sasrecf.py
+index 82dd66c5..f00f6c73 100644
+--- a/recbole/model/sequential_recommender/sasrecf.py
++++ b/recbole/model/sequential_recommender/sasrecf.py
+@@ -25,6 +25,8 @@ class SASRecF(SequentialRecommender):
+     def __init__(self, config, dataset):
+         super(SASRecF, self).__init__(config, dataset)
+ 
++        print("===============log info inside SASRecF constructor================")
++
+         # load parameters info
+         self.n_layers = config["n_layers"]
+         self.n_heads = config["n_heads"]
+@@ -38,16 +40,28 @@ class SASRecF(SequentialRecommender):
+         self.layer_norm_eps = config["layer_norm_eps"]
+ 
+         self.selected_features = config["selected_features"]
++
++        print(f"[SASRecF] selected features: {self.selected_features}")
++
+         self.pooling_mode = config["pooling_mode"]
+         self.device = config["device"]
+-        self.num_feature_field = sum(
+-            (
+-                1
+-                if dataset.field2type[field] != FeatureType.FLOAT_SEQ
+-                else dataset.num(field)
+-            )
+-            for field in config["selected_features"]
+-        )
++        print("[SASRecF] field2type:", dataset.field2type["side_emb"])
++        print("[SASRecF] dataset.num:", dataset.num("side_emb"))
++        # # TODO: fix this issue
++        # using `dataset.num(field)` to get the number of features is wrong for `float_seq` 
++        # because row is stored as a tuple (values, weights), and dataset.num(field) ends up reading 2
++        # (length of the tuple) instead of the actual number of features.
++        # self.num_feature_field = sum(
++        #     (
++        #         1
++        #         if dataset.field2type[field] != FeatureType.FLOAT_SEQ
++        #         else dataset.num(field)
++        #     )
++        #     for field in config["selected_features"]
++        # )
++        self.num_feature_field = len(self.selected_features)
++
++        print(f"[SASRecF] num_feature_field: {self.num_feature_field}")
+ 
+         self.initializer_range = config["initializer_range"]
+         self.loss_type = config["loss_type"]
+@@ -94,6 +108,8 @@ class SASRecF(SequentialRecommender):
+         self.apply(self._init_weights)
+         self.other_parameter_name = ["feature_embed_layer"]
+ 
++        print("===============End================")
++
+     def _init_weights(self, module):
+         """Initialize the weights"""
+         if isinstance(module, (nn.Linear, nn.Embedding)):
+@@ -108,6 +124,7 @@ class SASRecF(SequentialRecommender):
+ 
+     def forward(self, item_seq, item_seq_len):
+         item_emb = self.item_embedding(item_seq)
++        # print(f"[SASRecF] item_emb shape: {item_emb.shape}")  # [B L H]
+ 
+         # position embedding
+         position_ids = torch.arange(
+@@ -115,10 +132,13 @@ class SASRecF(SequentialRecommender):
+         )
+         position_ids = position_ids.unsqueeze(0).expand_as(item_seq)
+         position_embedding = self.position_embedding(position_ids)
++        # print(f"[SASRecF] position_embedding shape: {position_embedding.shape}")  # [B L H]
+ 
+         sparse_embedding, dense_embedding = self.feature_embed_layer(None, item_seq)
+         sparse_embedding = sparse_embedding["item"]
+         dense_embedding = dense_embedding["item"]
++        # print(f"[SASRecF] sparse_embedding shape: {sparse_embedding.shape}")  # no token features in our case
++        # print(f"[SASRecF] dense_embedding shape: {dense_embedding.shape}")
+         # concat the sparse embedding and float embedding
+         feature_table = []
+         if sparse_embedding is not None:
+@@ -132,9 +152,12 @@ class SASRecF(SequentialRecommender):
+         feature_emb = feature_table.view(
+             table_shape[:-2] + (feat_num * embedding_size,)
+         )
++        # print(f"[SASRecF] feature_emb shape: {feature_emb.shape}")  # [B L (feat_num*H)]
+         input_concat = torch.cat((item_emb, feature_emb), -1)  # [B 1+field_num*H]
++        # print(f"[SASRecF] input_concat shape: {input_concat.shape}")  # [B L (1+field_num)*H]
+ 
+         input_emb = self.concat_layer(input_concat)
++        # print(f"[SASRecF] input_emb shape: {input_emb.shape}")  # [B L H]
+         input_emb = input_emb + position_embedding
+         input_emb = self.LayerNorm(input_emb)
+         input_emb = self.dropout(input_emb)
+diff --git a/recbole/quick_start/quick_start.py b/recbole/quick_start/quick_start.py
+index 43cd0fe3..915a7ca5 100644
+--- a/recbole/quick_start/quick_start.py
++++ b/recbole/quick_start/quick_start.py
+@@ -129,6 +129,14 @@ def run_recbole(
+     dataset = create_dataset(config)
+     logger.info(dataset)
+ 
++    # print("[run_recbole] Item feat columns:", dataset.item_feat.columns.tolist())
++    # print("[run_recbole] side_emb type:", dataset.field2type['side_emb'])
++    # print("[run_recbole] side_emb inferred dim:", dataset.num('side_emb'))          # <-- you’ll likely see 2
++
++    ## confirm not from bad parsing
++    # print(f"[run_recbole] dataset.item_feat['side_emb'].iloc[0] : {dataset.item_feat['side_emb'].iloc[0]}")
++    # print(f"[run_recbole] dataset.item_feat['side_emb'].iloc[1] : {dataset.item_feat['side_emb'].iloc[1]}")
++
+     # dataset splitting
+     train_data, valid_data, test_data = data_preparation(config, dataset)
+ 
+@@ -137,6 +145,14 @@ def run_recbole(
+     model = get_model(config["model"])(config, train_data._dataset).to(config["device"])
+     logger.info(model)
+ 
++    # print("[run_recbole] num_feature_field:", model.num_feature_field)
++    # print("[run_recbole] concat_in    :", model.concat_layer.in_features)
++
++
++    ## ======issues!=======
++    # During FLOPs estimation, RecBole feeds a dummy all-PAD sequence (item ids = 0) 
++    # For PAD tokens, the feature branch returns nothing (or is skipped), so the runtime concat becomes only 
++    # item + pos = 128 dims, but concat_layer still expects 3 (item_id_emb + pos_emb + feature_emb) * 64 = 192 dims
+     transform = construct_transform(config)
+     flops = get_flops(model, dataset, config["device"], logger, transform)
+     logger.info(set_color("FLOPs", "blue") + f": {flops}")
+@@ -176,6 +192,8 @@ def run_recbole(
+     if config["local_rank"] == 0 and queue is not None:
+         queue.put(result)  # for multiprocessing, e.g., mp.spawn
+ 
++    print("===============End================")
++
+     return result  # for the single process
+ 
+ 
