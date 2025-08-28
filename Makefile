@@ -320,3 +320,30 @@ eval_reranking: $(RERANK_STAMP)
 	  --test-path $(SPLIT_DIR)/repeat_novel/novel.parquet \
 	  --dir $(RERANK_DIR) \
 	  --ks 10 20 50 100
+
+.PHONY: eval_retrieval_diversity
+eval_retrieval_diversity: $(RETRIEVE_STAMP)
+	@echo "› eval_retrieval_diversity -> $(RET_DIR)"
+	$(PY) -m src.eval.diversity_evaluate \
+	  --dir $(RET_DIR) \
+	  --k 500 \
+	  --pair-samples 10000 \
+	  --rbo-p 0.9 \
+
+.PHONY: eval_ranking_diversity
+eval_ranking_diversity: $(RANK_STAMP)
+	@echo "› eval_ranking_diversity -> $(RANK_DIR)"
+	$(PY) -m src.eval.diversity_evaluate \
+	  --dir $(RANK_DIR) \
+	  --k 500 \
+	  --pair-samples 10000 \
+	  --rbo-p 0.9 \
+
+.PHONY: eval_reranking_diversity
+eval_reranking_diversity: $(RERANK_STAMP)
+	@echo "› eval_reranking_diversity -> $(RERANK_DIR)"
+	$(PY) -m src.eval.diversity_evaluate \
+	  --dir $(RERANK_DIR) \
+	  --k 500 \
+	  --pair-samples 10000 \
+	  --rbo-p 0.9 \
