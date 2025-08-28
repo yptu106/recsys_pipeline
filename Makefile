@@ -90,11 +90,6 @@ RERANK_STAMP   := $(RERANK_DIR)/.rerank_done
 
 # ---- tools ----
 PY := python
-BUILD_INTERACTIONS := -m src.preprocessing.build_interactions
-BUILD_ITEM_SENTENCE := -m src.preprocessing.build_item_sentence
-BUILD_AGG_FEATURES := -m src.preprocessing.build_aggregate_features
-SPLIT := -m src.preprocessing.split_dataset
-BUILD_EMB_STREAMER := -m src.encoder.build_streamer_emb
 
 # ---- diectories to ensure exist ----
 NEEDED_DIRS := \
@@ -119,7 +114,7 @@ dirs:
 # 1) preprocess interactions (filter by interaction type) 
 $(PROC_OUT): | dirs
 	@echo "› build_interactions -> $(PROC_OUT)"
-	$(PY) $(BUILD_INTERACTIONS) \
+	$(PY) -m src.preprocessing.build_interactions \
 	  --csv $(RAW_DIR)/interactions.csv \
 	  --filter-conditions $(INTERACTION_TYPE) \
 	  --out-dir $(PROC_DIR)
@@ -129,7 +124,7 @@ build_interactions: $(PROC_OUT)
 # 2) build item sentences
 $(ITEM_SENT_OUT): $(PROC_OUT)
 	@echo "› build_item_sentence -> $(ITEM_SENT_OUT)"
-	$(PY) $(BUILD_ITEM_SENTENCE) \
+	$(PY) -m src.preprocessing.build_item_sentence \
 	  --streamers-csv $(RAW_DIR)/streamers.csv \
 	  --out-dir $(FEAT_DIR)/item_sentence
 
@@ -138,7 +133,7 @@ build_item_sentence: $(ITEM_SENT_OUT)
 # 3) streamer embeddings
 $(EMB_STREAMER): $(ITEM_SENT_OUT)
 	@echo "› streamer_embeddings -> $(EMB_STREAMER)"
-	$(PY) $(BUILD_EMB_STREAMER) \
+	$(PY) -m src.encoder.build_streamer_emb \
 	  --features $(ITEM_SENT_OUT) \
 	  --encode-col $(EMB_COL) \
 	  --model $(ENCODER) \
@@ -225,6 +220,13 @@ $(RERANK_STAMP): $(RANK_STAMP) | $(RERANK_DIR)/
 .PHONY: rerank
 rerank: $(RERANK_STAMP)
 
+
+# # ----- ranker training -----
+# .PHONY: build_atomic_files
+
+
+
+# ----- evaluation -----
 
 # evaluate retrieval reuslts
 .PHONY: eval_retrieval
