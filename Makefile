@@ -73,11 +73,14 @@ RET_DIR        := $(RES_BASE)/retrieved
 RANK_DIR       := $(RES_BASE)/ranked/$(RANKER)
 RERANK_DIR     := $(RES_BASE)/reranked/$(RANKER)/$(RERANK)
 
+# TODO: fix directory naming logic
+ATOMIC_DIR     := data/atomic/$(DATASET)_w_ts_heavy
+
 # -------- artifacts --------
 PROC_OUT       := $(PROC_DIR)/latest.parquet
 
 ITEM_SENT_OUT  := $(FEAT_DIR)/item_sentence/latest.parquet
-STREAMER_FEAT  := $(FEAT_DIR)/streamer/latest.parquet
+STREAMER_FEAT_OUT  := $(FEAT_DIR)/streamer/latest.parquet
 USER_FEAT_OUT  := $(FEAT_DIR)/user/latest.parquet
 
 EMB_STREAMER   := $(EMB_DIR)/streamer/embeddings.npy
@@ -88,6 +91,8 @@ RETRIEVE_STAMP := $(RET_DIR)/.retrieve_done
 RANK_STAMP     := $(RANK_DIR)/.rank_done
 RERANK_STAMP   := $(RERANK_DIR)/.rerank_done
 
+ATOMIC_STAMP   := $(ATOMIC_DIR)/.atomic_done
+
 # ---- tools ----
 PY := python
 
@@ -95,6 +100,7 @@ PY := python
 NEEDED_DIRS := \
 	$(RAW_DIR) \
 	$(PROC_DIR) \
+	$(ATOMIC_DIR) \
 	$(FEAT_DIR)/item_sentence $(FEAT_DIR)/streamer $(FEAT_DIR)/user \
 	$(EMB_DIR)/streamer $(EMB_DIR)/user \
 	$(IDX_DIR) $(SPLIT_DIR) $(RET_DIR) $(RANK_DIR) $(RERANK_DIR)
@@ -154,7 +160,7 @@ $(IDX_STAMP): $(EMB_STREAMER)
 build_index: $(IDX_STAMP)
 
 # 5) split dataset
-$(SPLIT_STAMP): $(PROC_OUT)
+$(SPLIT_STAMP): $(PROC_OUT) $(EMB_STREAMER) | $(SPLIT_DIR)/
 	@echo "› split -> $(SPLIT_DIR)"
 
 	$(PY) -m src.preprocessing.split_dataset \
@@ -186,8 +192,30 @@ retrieve: $(SPLIT_STAMP) $(IDX_STAMP) $(EMB_STREAMER) | $(RET_DIR)/
 	  --k 500
 	@touch $(RETRIEVE_STAMP)
 
+# build user and streamer aggregate features
+$(STREAMER_FEAT_OUT) $(USER_FEAT_OUT): $(SPLIT_STAMP) | $(FEAT_DIR)/streamer/ $(FEAT_DIR)/user/
+	@echo "› build_agg_features -> $(FEAT_DIR)/streamer/ and $(FEAT_DIR)/user/"
+	$(PY) -m src.preprocessing.build_aggregate_features \
+	  --user-interactions $(SPLIT_DIR)/interactions_train.parquet \
+	  --out-dir $(FEAT_DIR)
+
+build_agg_features: $(STREAMER_FEAT_OUT) $(USER_FEAT_OUT)
+
+# make atomic files for recbole ranker
+# TODO: avoid hardcoding dataset name in output path
+$(ATOMIC_STAMP): $(SPLIT_STAMP) $(STREAMER_FEAT_OUT) $(USER_FEAT_OUT)| $(ATOMIC_DIR)/
+	@echo "› make_atomic_files -> $(ATOMIC_DIR)"
+	$(PY) -m src.ranker.recbole.data.build_atomic_file \
+	  --interactions_file $(SPLIT_DIR)/interactions_train.parquet \
+	  --item_features_file $(FEAT_DIR)/streamer/latest.parquet \
+	  --user_features_file $(FEAT_DIR)/user/latest.parquet \
+	  --out_dir $(ATOMIC_DIR) \
+	  --dataset_name $(DATASET)_w_ts_heavy
+	@touch $(ATOMIC_STAMP)
+build_atomic_files: $(ATOMIC_STAMP)
+
 # 7) run ranking
-$(RANK_STAMP): $(RETRIEVE_STAMP) | $(RANK_DIR)/
+$(RANK_STAMP): $(RETRIEVE_STAMP) $(ATOMIC_STAMP)| $(RANK_DIR)/
 	@echo "› rank -> $(RANK_DIR)"
 	$(PY) -m src.ranker.recbole.run_ranker \
 	  --test-path $(SPLIT_DIR)/test.parquet \
