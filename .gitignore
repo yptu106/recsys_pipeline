@@ -3,16 +3,31 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# data
 data/*
+
+# artifacts
 embeddings/*
 index/*
 features/*
 figures/*
 notebooks/*
 results/*
-src/embeddings/models/*
-ranker/checkpoints/*
-encoder/checkpoints/*
-ranker/recbole/saved/*
+
 log/*
 log_tensorboard/*
+
+# checkpoints
+ranker/checkpoints/*
+ranker/recbole/saved/*
+src/encoder/checkpoints/*
+src/ranker/recbole/checkpoints/*
+src/ranker/torch/checkpoints/*
+
+# miscellaneous
+archive/*
+
+ranker/recbole/configs/*.yaml
+ranker/recbole/services/*.yaml
+ranker/services/*.yaml
+ranker/configs/*/*.yaml
