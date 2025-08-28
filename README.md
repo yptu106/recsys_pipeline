@@ -180,6 +180,11 @@ Currently, we use Split ID and Retrieval Profile to manage the artifacts of each
 ### Notes on `FILTER`
 * The `FILTER` variable only affects the directory ID (for naming consistency).
 * Filtering logic (e.g., `--filter-missing-streamers`, `--filter-too-few-streamers`) is currently hardcoded in Makefile. 
+    * `--filter-missing-streamers`: filter out users' interactions with streamers without embedding
+        * filter\_missing\_streamers tag
+    * `--filter-too-few-streamers`: filter out users who interacted with less than 5 unique streamers
+        * heavy tag
+    * __heavy\_filter\_missing\_streamers__: we set the two filter conditions to True
 * Changing `FILTER` alone will not alter preprocessing behavior. Check of Makefile for more details. 
 
 ## Notes on RecBole Ranker
