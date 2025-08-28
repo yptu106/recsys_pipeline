@@ -117,3 +117,5 @@ https://github.com/RUCAIBox/RecBole/issues/2104
 * Checkpoints for torch ranker are stored under `/nas02/home/kevin/recsys_pipeline/src/ranker/torch/checkpoints`. 
 
 
+## Raw Dataset
+Please refer to `/nas02/home/kevin/recsys_pipeline/data/raw/livestream/2025-06-30` for the raw dataset used in this experiement. 
