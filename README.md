@@ -65,10 +65,10 @@ flowchart LR
     subgraph Preprocessing Raw Interactions
         A[build_interactions] --> B[split]
         R1 --> A
+        B -->|train interaction split| J[build_atomic_files]
     end
 
     subgraph Construct User/Streamer Features
-        B -->|train interaction split| J[build_atomic_files]
         R2 --> F[build_item_sentence] --> G[build_streamer_emb]
         B -. train interaction split.-> I[build_agg_features] -. aggregated user/streamer features .-> J
     end
