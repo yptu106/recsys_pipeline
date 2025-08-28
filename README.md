@@ -1,127 +1,119 @@
+# Project
+A multi-stage recommender system pipeline (retrieval -> ranking -> re-ranking) for livestreaming interactions. 
 
-# Workflow
-All scripts are expected to be run from the project root directory, unless otherwise specified. 
-
-## 1. Preprocessing
-```
-# Generate filtered interactions
-./scripts/01_build_interactions.sh data/raw/interactions.csv donate
-
-# Build streamer-level features
-./scripts/02_build_streamer_features.sh data/raw/streamers.csv donate
+# Directory Layout
 
 ```
-
-## 2. Embedding + Indexing
-```
-# Generate streamer sentence embeddings
-./scripts/03_build_streamer_embeddings.sh features/streamer/latest.parquet item_sentence true MiniLM
-
-# Build FAISS index for retrieval
-./scripts/04_build_index.sh item_sentence_num MiniLM flat
-
-```
-
-## 3. Data Split
-```
-# Create train/val/test sets
-./scripts/05_split_dataset.sh donate embeddings/streamer/MiniLM/item_sentence_num/lookup.parquet
-
-```
-
-## 4. Retrieval & Ranking
-To retrieve and rank streamers for a single user_id, use the scripts under src/services/.
-
-```
-python -m src.services.retrieval \
-    --user-id 1000015 \
-    --emb-dir embeddings/streamer/MiniLM/item_sentence_num \
-    --index index/faiss/MiniLM/item_sentence_num/index_flat.idx \
-    --user-log data/splits/donate/interactions_train.parquet \
-    --out-dir results/retrieval/MiniLM/item_sentence_num
-
-python -m src.services.rank \
-    --user-id 1000015 \
-    --retrieval-path results/retrieval/MiniLM/item_sentence_num/user_1000015.json \
-    --feature-dir features/ranker/lightgbm \
-    --model-dir ranker/models \
-    --topk 100 \
-    --out-dir results/ranked/lightgbm
+├── data
+│   ├── atomic          # atomic files for RecBole
+│   ├── processed       # processed interactions data
+│   ├── raw             # raw dataset
+│   └── splits          # train, validation, testing
+├── embeddings          # generated embeddings
+├── env             
+├── features            # item_sentence, aggregated user/item features
+├── index               # FAISS indices
+├── Makefile
+├── README.md
+├── results             # retrieval, ranking, reranking outputs
+└── src                 # source code and checkpoints
+    ├── config.py     
+    ├── encoder         # retrieval encoder
+    ├── eval            # evaluation scripts
+    ├── indexing        # build FAISS indices  
+    ├── preprocessing   # scripts for preprocessing dataset
+    ├── ranker          # torch & RecBole ranker
+    ├── representations # wrapper to map id into its corresponding embedding
+    ├── reranker        # re-ranker object
+    └── retrieval       # wrapper to run two-tower retrieval
 ```
 
-## 5. Evaluation
-To evaluate the performance (e.g., Recall@K, MRR, nDCG) over all sampled users in the test split, use the scripts in scripts/eval/.
-
+# Usage
+## Run the full pipeline
+```bash
+make all
 ```
-# Run retrieval for all users
-./scripts/eval/01_run_retrieval.sh donate item_sentence_num MiniLM 500
+This will run through preprocssing -> retrieval -> ranking -> reranking. 
 
-# Evaluate retrieval result
-./scripts/eval/02_eval_retrieval.sh donate item_sentence_num MiniLM
+Note that you may need to change environment from `ml_env` to `recbole` to run `BPR` and `SASRec` ranker. 
 
-# Run ranking for all users
-./scripts/eval/03_run_rank.sh donate item_sentence_num MiniLM 100
-
-# Evaluate ranking result
-./scripts/eval/04_eval_rank.sh donate lightgbm
-```
-
-
-# Directory Structure
-```
-├── data/              # Raw, processed, and split datasets
-├── embeddings/        # Streamer/user embeddings (e.g., MiniLM)
-├── env/               # Conda environment configuration
-├── features/          # Streamer features (e.g., watch_ts, flattened sentence)
-├── notebooks/         # EDA and preprocessing notebooks
-├── ranker/            # LightGBM and MLP rankers
-├── scripts/           # Shell scripts for each stage of the pipeline
-├── src/               # Core Python modules (retrieval, ranking, eval, etc.)
+## Run individual stages
+```bash
+make build_interactions
+make build_item_sentence
+make build_streamer_emb
+make build_index
+make split
+make retrieve
+make rank
+make rerank
 ```
 
-## Preprocessing
-Converts raw interaction and streamer metadata CSVs into filtered Parquet files. Also generates derived statistics and streamer description fields to be used in downstream embedding and ranking modules.
+## Evaluation
+Evaluate different stages:
+```bash
+make eval_retrieval
+make eval_ranking
+make eval_reranking
+```
+Outputs metrics on:
+* Full dataset
+* Repeat interactions
+* Novel interactions
 
-Location: `src/preprocessing/`
+## Configurable Parameters (Makefile knobs)
+You can override defaults via CLI, e.g., `make rank RANKER_MODEL=SASRec`.
 
-| Script                  | Purpose                                                                                   |
-|-------------------------|-------------------------------------------------------------------------------------------|
-| `build_interactions.py` | Loads and filters raw user-streamer interaction data; outputs filtered interactions in Parquet format |
-| `build_features.py`     | Generates streamer-level features (e.g., total watch time, follower count, gift metrics) and streamer description based on meta data|
-| `split_dataset.py`      | Splits interaction data into train/val/test sets based leave-one-out random sampling strategy                      |
-| `preprocess_top100.ipynb` | Jupyter notebook for manually reviewing or preprocessing the top 100 streamers list     |
+| Variable            | Options                            | Default                           | Description                 |
+| ------------------- | ---------------------------------- | --------------------------------- | --------------------------- |
+| `DATASET`           | livestream                         | livestream                        | Dataset name                |
+| `DATA_VERSION`      | YYYY-MM-DD                         | 2025-06-30                        | Data version                |
+| `INTERACTION_TYPE`  | donate \| enter                    | donate                            | Type of user interaction    |
+| `EMB_COL`           | item\_sentence \| format\_sentence | item\_sentence                    | Feature column for encoding |
+| `RETRIEVAL_ENCODER` | MiniLM \| bge \| others            | MiniLM                            | Encoder backbone            |
+| `INDEX_TYPE`        | flat \| hnsw \| ivf                | flat                              | FAISS index type            |
+| `RANKER_MODEL`      | BPR \| SASRec                      | BPR                               | Ranking model               |
+| `RERANK_STRATEGY`   | mmr \| others                      | mmr                               | Re-ranking strategy         |
+| `SPLIT_TYPE`        | time \| random                     | time                              | Train/test split strategy   |
+| `FILTER`            | heavy\_filter\_missing\_streamers  | heavy\_filter\_missing\_streamers | Filtering strategy          |
 
-## Embeddings
-Generates sentence-based streamer embeddings using transformer models (e.g., MiniLM), and constructs FAISS indexes for retrieval. 
+### Directory Naming
+Currently, we use Split ID and Retrieval Profile to manage the artifacts of each stage. 
+* Split ID (`SPLIT_ID`) = `INTERACTION_TYPE`_`SPLIT_TYPE`_`FILTER`
+    * Example: `donate_time_heavy_filter_missing_streamers`
+* Retrieval Profile (`RETR_PROFILE`) = `EMB_COL`_`RETRIEVAL_ENCODER`_`INDEX_TYPE`
+    * Example: `item_sentence_MiniLM_flat`
 
-| Script                  | Purpose                                                                                          |
-| ----------------------- | ------------------------------------------------------------------------------------------------ |
-| `build_streamer_emb.py` | Loads streamer metadata and generates sentence embeddings using a transformer model              |
-| `train_encoder.py`      | *Work in Progress* Trains a transformer-based encoder (e.g., using sentence-transformers) on streaming metadata     |
+### Notes on `FILTER`
+* The `FILTER` variable only affects the directory ID (for naming consistency).
+* Filtering logic (e.g., `--filter-missing-streamers`, `--filter-too-few-streamers`) is currently hardcoded in Makefile. 
+* Changing `FILTER` alone will not alter preprocessing behavior. Check of Makefile for more details. 
 
-## Ranker
-Contains the source code and training scripts for second-stage ranking. This module is used after retrieval to rerank the top-N candidates.
+## Notes on RecBole Ranker
+* The RecBole package requires specific versions of PyTorch and NumPy. You may need to activate the `recbole` environment to run the ranker.
+* Since we hardcoded the dataset directory for training RecBole models in the config files, the atomic files required by the model do not follow the directory naming convention based on Split ID and Retrieval Profile. Future work may need to refactor this part.
+* If you'd like to run `SASRecF` to incorporate item embeddings, you'll need to apply our local bug fix to RecBole, follow these steps:
 
-Location: `ranker/`
+```bash
+# Clone the official RecBole repo
+git clone https://github.com/RUCAIBox/RecBole.git
+cd RecBole
 
-| Path / Script                | Purpose                                                                                 |
-| ---------------------------- | --------------------------------------------------------------------------------------- |
-| `lightgbm/train_lightgbm.py` | Trains a LightGBM ranker using feature-engineered user–streamer pairs                   |
-| `lightgbm/build_features.py` | Builds ranking features (e.g., watch counts, follow/gift history) for LightGBM training |
-| `mlp/train_mlp.py`           | Trains a neural network ranker (MLP) on user-positive-negative triplets        |
-| `mlp/mlp_ranker.py`          | Defines the architecture and forward pass for the MLP ranker                            |
-| `mlp/pairwise_dataset.py`    | Constructs PyTorch `Dataset` objects for triplet-based training of the MLP              |
+# Apply the diff stored in this repository
+git apply ../src/ranker/recbole/recbole_fix.diff
+
+# Install the patched version locally
+pip install -e .
+
+```
+After installation, all ranker scripts will use the patched RecBole instead of the remote PyPI package. 
+
+Please refer to the following link for the details:
+https://github.com/RUCAIBox/RecBole/issues/2104
+
+## Checkpoints
+* Checkpoints for two-tower retrieval encoder are stored under `/nas02/home/kevin/recsys_pipeline/src/encoder/checkpoints/epoch40`. 
+* Checkpoints for RecBole ranker are stored under `/nas02/home/kevin/recsys_pipeline/src/ranker/recbole/checkpoints`. 
+* Checkpoints for torch ranker are stored under `/nas02/home/kevin/recsys_pipeline/src/ranker/torch/checkpoints`. 
 
 
-## Services
-Implements model inference services for retrieval and ranking. These scripts are designed to be used during evaluation or deployment stages and serve as the entry points for pipeline components.
-
-Location: `src/services/`
-
-| Script              | Purpose                                                                                                |
-| ------------------- | ------------------------------------------------------------------------------------------------------ |
-| `retrieval.py`      | Loads FAISS index and performs nearest neighbor search to retrieve top-k candidate streamers per user    |
-| `build_user_emb.py` | Precompute user embeddings by averaging the embeddings of previously watched streamers         |
-| `rank.py`           | LightGBM model to score and rank retrieved items |
-| `rank_pop.py`       | Simple popularity-based ranking logic for use as a baseline or fallback method                         |
-| `rank_mlp.py`       | Loads and runs MLP model to score and rank retrieved items                                             |
