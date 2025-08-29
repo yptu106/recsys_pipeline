@@ -1,6 +1,10 @@
 # Project
 A multi-stage recommender system pipeline (retrieval -> ranking -> re-ranking) for livestreaming interactions. 
 
+# Environment 
+* All required dependencies are listed under the `env/` directory.
+* Python 3.9 or higher is required.
+
 # Directory Layout
 
 ```
