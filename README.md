@@ -64,6 +64,7 @@ make split                  # split the processed interactions into train/valida
 make retrieve               # retrieve top-K candidates using FAISS
 make rank                   # apply ranker (BPR, SASRec)
 make rerank                 # apply reranking strategy (MMR)
+make popularity_rank        # recommend based on popularity streamers
 ```
 
 ## Workflow
