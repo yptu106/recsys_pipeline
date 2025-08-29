@@ -348,6 +348,27 @@ eval_reranking: $(RERANK_STAMP)
 	  --dir $(RERANK_DIR) \
 	  --ks 10 20 50 100
 
+.PHONY: eval_pop_rank
+eval_pop_rank: $(POP_RANK_STAMP)
+	@echo "› eval_pop_rank -> $(POP_RANK_DIR)"
+	@echo "› full dataset"
+	$(PY) -m src.eval.evaluate \
+	  --test-path $(SPLIT_DIR)/test.parquet \
+	  --dir $(POP_RANK_DIR) \
+	  --ks 10 20 50 100
+	
+	@echo "› repeat set"
+	$(PY) -m src.eval.evaluate \
+	  --test-path $(SPLIT_DIR)/repeat_novel/repeat.parquet \
+	  --dir $(POP_RANK_DIR) \
+	  --ks 10 20 50 100
+
+	@echo "› novel set"
+	$(PY) -m src.eval.evaluate \
+	  --test-path $(SPLIT_DIR)/repeat_novel/novel.parquet \
+	  --dir $(POP_RANK_DIR) \
+	  --ks 10 20 50 100
+
 .PHONY: eval_retrieval_diversity
 eval_retrieval_diversity: $(RETRIEVE_STAMP)
 	@echo "› eval_retrieval_diversity -> $(RET_DIR)"

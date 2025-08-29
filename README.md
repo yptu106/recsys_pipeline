@@ -163,6 +163,7 @@ Evaluate different stages:
 make eval_retrieval
 make eval_ranking
 make eval_reranking
+make eval_pop_rank
 ```
 Outputs metrics on:
 * Full dataset
