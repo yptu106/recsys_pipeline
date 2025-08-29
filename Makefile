@@ -72,6 +72,7 @@ RES_BASE       := results/$(DATASET)/$(DATA_VERSION)/$(SPLIT_ID)/$(RETR_PROFILE)
 RET_DIR        := $(RES_BASE)/retrieved
 RANK_DIR       := $(RES_BASE)/ranked/$(RANKER)
 RERANK_DIR     := $(RES_BASE)/reranked/$(RANKER)/$(RERANK)
+POP_RANK_DIR   := $(RES_BASE)/ranked/popularity
 
 ENCODER_CKPT_DIR := src/encoder/checkpoints
 RECBOLE_CKPT_DIR := src/ranker/recbole/checkpoints
@@ -95,6 +96,7 @@ SPLIT_STAMP    := $(SPLIT_DIR)/.split_done
 RETRIEVE_STAMP := $(RET_DIR)/.retrieve_done
 RANK_STAMP     := $(RANK_DIR)/.rank_done
 RERANK_STAMP   := $(RERANK_DIR)/.rerank_done
+POP_RANK_STAMP := $(POP_RANK_DIR)/.pop_rank_done
 
 ATOMIC_STAMP   := $(ATOMIC_DIR)/.atomic_done
 
@@ -109,7 +111,7 @@ NEEDED_DIRS := \
 	$(ENCODER_CKPT_DIR) $(RECBOLE_CKPT_DIR) \
 	$(FEAT_DIR)/item_sentence $(FEAT_DIR)/streamer $(FEAT_DIR)/user \
 	$(EMB_DIR)/streamer $(EMB_DIR)/user \
-	$(IDX_DIR) $(SPLIT_DIR) $(RET_DIR) $(RANK_DIR) $(RERANK_DIR)
+	$(IDX_DIR) $(SPLIT_DIR) $(RET_DIR) $(RANK_DIR) $(RERANK_DIR) $(POP_RANK_DIR)
 
 # ---- toy targets that only print paths ----
 .PHONY: all build_item_sentence streamer_emb index preprocess split agg retrieve rank rerank echo-vars
@@ -258,16 +260,26 @@ rerank: $(RERANK_STAMP)
 
 # popularity baseline
 # preprocess popularity list
-$(POP_OUT): $(PROC_OUT) | dirs
+$(POP_OUT): $(PROC_DIR) | dirs
 	@echo "› build_global_list -> $(POP_OUT)"
 	$(PY) -m src.preprocessing.build_global_list \
 	  --input-path $(RAW_DIR)/top100_streamers.csv \
-	  --output-dir $(POP_OUT)
+	  --output-dir $(PROC_DIR)/global_list
 
 build_global_list: $(POP_OUT)
 
-# .PHONY: popularity_rank
 
+$(POP_RANK_STAMP): $(POP_OUT) | $(POP_RANK_DIR)/
+	@echo "› popularity_rank -> $(POP_RANK_DIR)"
+	$(PY) -m src.ranker.run_rank_popularity \
+	  --test-path $(SPLIT_DIR)/test.parquet \
+	  --pop-streamers-path $(POP_OUT) \
+	  --out-dir $(POP_RANK_DIR) \
+	  --topk 100
+	@touch $(POP_RANK_STAMP)
+
+.PHONY: popularity_rank
+popularity_rank: $(POP_RANK_STAMP)
 
 # ----- evaluation -----
 

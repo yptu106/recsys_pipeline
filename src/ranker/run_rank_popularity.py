@@ -3,7 +3,7 @@ import pathlib
 import pandas as pd
 from tqdm import tqdm
 
-from src.services.rank_pop import rank_user
+from src.ranker.rank_pop import rank_user
 from src.config import USER_ID_COL, STREAMER_ID_COL
 
 DEFAULT_K = 100  # Default number of candidates to retrieve
