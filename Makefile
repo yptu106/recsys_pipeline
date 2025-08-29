@@ -86,6 +86,8 @@ ITEM_SENT_OUT  := $(FEAT_DIR)/item_sentence/latest.parquet
 STREAMER_FEAT_OUT  := $(FEAT_DIR)/streamer/latest.parquet
 USER_FEAT_OUT  := $(FEAT_DIR)/user/latest.parquet
 
+POP_OUT		   := $(PROC_DIR)/global_list/latest.parquet
+
 EMB_STREAMER   := $(EMB_DIR)/streamer/embeddings.npy
 IDX_STAMP      := $(IDX_DIR)/index.idx
 SPLIT_STAMP    := $(SPLIT_DIR)/.split_done
@@ -211,7 +213,7 @@ build_agg_features: $(STREAMER_FEAT_OUT) $(USER_FEAT_OUT)
 $(ATOMIC_STAMP): $(SPLIT_STAMP) $(STREAMER_FEAT_OUT) $(USER_FEAT_OUT)| $(ATOMIC_DIR)/
 	@echo "› make_atomic_files -> $(ATOMIC_DIR)"
 	$(PY) -m src.ranker.recbole.data.build_atomic_file \
-	  --interactions_file $(SPLIT_DIR)/interactions_train.parquet \
+	  --interactions_file $(SPLIT_DIR)/train.parquet \
 	  --item_features_file $(FEAT_DIR)/streamer/latest.parquet \
 	  --user_features_file $(FEAT_DIR)/user/latest.parquet \
 	  --out_dir $(ATOMIC_DIR) \
@@ -254,9 +256,17 @@ $(RERANK_STAMP): $(RANK_STAMP) | $(RERANK_DIR)/
 rerank: $(RERANK_STAMP)
 
 
-# # ----- ranker training -----
-# .PHONY: build_atomic_files
+# popularity baseline
+# preprocess popularity list
+$(POP_OUT): $(PROC_OUT) | dirs
+	@echo "› build_global_list -> $(POP_OUT)"
+	$(PY) -m src.preprocessing.build_global_list \
+	  --input-path $(RAW_DIR)/top100_streamers.csv \
+	  --output-dir $(POP_OUT)
 
+build_global_list: $(POP_OUT)
+
+# .PHONY: popularity_rank
 
 
 # ----- evaluation -----
