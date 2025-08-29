@@ -11,7 +11,7 @@ embeddings/*
 index/*
 features/*
 figures/*
-notebooks/*
+# notebooks/*
 results/*
 
 log/*
