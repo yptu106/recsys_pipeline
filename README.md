@@ -5,6 +5,15 @@ A multi-stage recommender system pipeline (retrieval -> ranking -> re-ranking) f
 * All required dependencies are listed under the `env/` directory.
 * Python 3.9 or higher is required.
 
+# Init step
+## Raw Dataset
+Please refer to `/nas02/home/kevin/recsys_pipeline/data/raw/livestream/2025-06-30` for the raw dataset used in this experiement. 
+
+## Checkpoints
+* Checkpoints for two-tower retrieval encoder are stored under `/nas02/home/kevin/recsys_pipeline/src/encoder/checkpoints/epoch40`. 
+* Checkpoints for RecBole ranker are stored under `/nas02/home/kevin/recsys_pipeline/src/ranker/recbole/checkpoints`. 
+* Checkpoints for torch ranker are stored under `/nas02/home/kevin/recsys_pipeline/src/ranker/torch/checkpoints`. 
+
 # Directory Layout
 
 ```
@@ -147,6 +156,7 @@ flowchart LR
         * JSON per user (`user_{user_id}.json`)
 
 ## Evaluation
+### Ranking Evaluation
 Evaluate different stages:
 ```bash
 make eval_retrieval
@@ -157,6 +167,13 @@ Outputs metrics on:
 * Full dataset
 * Repeat interactions
 * Novel interactions
+
+### Diversity Evaluation
+```bash
+make eval_retrieval_diversity
+make eval_ranking_diversity
+make eval_reranking_diversity
+```
 
 ## Configurable Parameters (Makefile knobs)
 You can override defaults via CLI, e.g., `make rank RANKER_MODEL=SASRec`.
@@ -212,15 +229,6 @@ After installation, all ranker scripts will use the patched RecBole instead of t
 
 Please refer to the following link for the details:
 https://github.com/RUCAIBox/RecBole/issues/2104
-
-
-## Raw Dataset
-Please refer to `/nas02/home/kevin/recsys_pipeline/data/raw/livestream/2025-06-30` for the raw dataset used in this experiement. 
-
-## Checkpoints
-* Checkpoints for two-tower retrieval encoder are stored under `/nas02/home/kevin/recsys_pipeline/src/encoder/checkpoints/epoch40`. 
-* Checkpoints for RecBole ranker are stored under `/nas02/home/kevin/recsys_pipeline/src/ranker/recbole/checkpoints`. 
-* Checkpoints for torch ranker are stored under `/nas02/home/kevin/recsys_pipeline/src/ranker/torch/checkpoints`. 
 
 
 # Training
